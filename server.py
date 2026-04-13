@@ -94,17 +94,16 @@ class ControlServer:
         raw_s.settimeout(1.0)
         raw_s.bind((self.host, self.port_stream))
         raw_s.listen(10)
-        secure_s = self.ssl_context.wrap_socket(raw_s, server_side=True)
-        camera = cv2.VideoCapture(0)
+        # We do NOT wrap the listening socket, we wrap the accepted connection
         while self.running:
             try:
-                conn, _ = secure_s.accept()
-                threading.Thread(target=self.handle_stream_client, args=(conn, camera), daemon=True).start()
+                conn, _ = raw_s.accept()
+                secure_conn = self.ssl_context.wrap_socket(conn, server_side=True)
+                threading.Thread(target=self.handle_stream_client, args=(secure_conn, cv2.VideoCapture(0)), daemon=True).start()
             except socket.timeout: continue
             except Exception as e:
                 logging.error(f"Stream Accept Error: {e}")
                 continue
-        camera.release()
 
     def handle_stream_client(self, conn, camera):
         with mss.mss() as sct:
@@ -123,10 +122,9 @@ class ControlServer:
                     if not self.is_streaming: time.sleep(0.5); continue
                     _, enc = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 45])
                     data = enc.tobytes()
-                    # Use !I for fixed 4-byte network order
                     conn.sendall(struct.pack("!I", len(data)) + data)
             except: pass
-            finally: conn.close()
+            finally: conn.close(); camera.release()
 
     def command_handler(self):
         raw_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -134,11 +132,11 @@ class ControlServer:
         raw_s.settimeout(1.0)
         raw_s.bind((self.host, self.port_cmd))
         raw_s.listen(10)
-        secure_s = self.ssl_context.wrap_socket(raw_s, server_side=True)
         while self.running:
             try:
-                conn, _ = secure_s.accept()
-                threading.Thread(target=self.handle_command_client, args=(conn,), daemon=True).start()
+                conn, _ = raw_s.accept()
+                secure_conn = self.ssl_context.wrap_socket(conn, server_side=True)
+                threading.Thread(target=self.handle_command_client, args=(secure_conn,), daemon=True).start()
             except socket.timeout: continue
             except Exception as e:
                 logging.error(f"Command Accept Error: {e}")
@@ -192,6 +190,12 @@ class ControlServer:
                     apps.sort(key=lambda x: x['sw'], reverse=True)
                     res_a = json.dumps(apps).encode()
                     conn.sendall(struct.pack("!I", len(res_a)) + res_a)
+                elif t == "START_APP":
+                    try: subprocess.Popen(cmd['exec'], shell=True, start_new_session=True); conn.sendall(b"OK")
+                    except: conn.sendall(b"FAIL")
+                elif t == "REC_START":
+                    self.is_recording = True; self.stream_mode = cmd.get('mode', "SCREEN")
+                    self.recorder = cv2.VideoWriter(str(self.record_path), cv2.VideoWriter_fourcc(*'mp4v'), 10, (1280, 720))
                 elif t == "LIST_FILES":
                     p = Path(cmd['path'])
                     files = []

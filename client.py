@@ -22,14 +22,10 @@ if sys.platform == "win32":
 
 # Linux Fix
 if sys.platform == "linux":
-    try:
-        executable_path = Path(sys.executable).parent
-        # Try to find plugins path in a similar way
-        plugins_path = list(executable_path.parent.glob("**/PyQt5/Qt5/plugins"))
-        if plugins_path:
-            os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(plugins_path[0])
-            os.environ["QT_QPA_PLATFORM"] = "xcb"
-    except: pass
+    # Ensure we use xcb and don't let opencv (if any) interfere
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
+    # If using wayland, some systems might need this, but xcb is safer for this app
+    # os.environ["QT_QPA_PLATFORM"] = "wayland;xcb"
 
 import socket
 import ssl
@@ -65,10 +61,12 @@ class RemoteBase(QMainWindow):
         try:
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             raw.settimeout(10)
+            raw.connect((self.ip, 9999))
+            
             ctx = ssl._create_unverified_context()
             ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-            self.cmd_s = ctx.wrap_socket(raw)
-            self.cmd_s.connect((self.ip, 9999))
+            self.cmd_s = ctx.wrap_socket(raw, server_hostname=self.ip)
+            
             self.cmd_s.sendall(self.pwd.encode())
             
             h = recv_all(self.cmd_s, 4)
@@ -112,11 +110,14 @@ class LiveControl(RemoteBase):
         threading.Thread(target=self.stream_loop, daemon=True).start()
 
     def stream_loop(self):
-        ctx = ssl._create_unverified_context()
-        ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
         try:
-            s = ctx.wrap_socket(socket.socket())
-            s.connect((self.ip, 9998))
+            raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            raw.connect((self.ip, 9998))
+            
+            ctx = ssl._create_unverified_context()
+            ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+            s = ctx.wrap_socket(raw, server_hostname=self.ip)
+            
             while self.active:
                 h = recv_all(s, 4)
                 if not h: break
