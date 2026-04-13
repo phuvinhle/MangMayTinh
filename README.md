@@ -1,6 +1,6 @@
 REMOTE PC CONTROL APPLICATION
 
-[1]. CLIENT (Controller)
+[1]. CLIENT (Controller)  
 [2]. SERVER (Controlled)
 
 - List / Start / Stop applications
@@ -10,17 +10,21 @@ REMOTE PC CONTROL APPLICATION
 - Copy files
 - Shutdown / Restart
 - Start webcam; Record
-[*] Programming language: optional
-[*] 2/3 students per group
-Submission includes:
-[1]. Demo video presenting the software features
-[2]. AI log (main questions/answers)
-[3]. Report:
-  - Software interface design
-  - Description of functionalities
-  - Technical solution (libraries, processing flow, etc.)
+- Note: Multi-control many servers
+  
+[*] Programming language: optional4
 
-[*]. Deadline: April 24, 2026
+[*] 2/3 students per group
+
+Submission includes:  
+[1]. Demo video presenting the software features  
+[2]. AI log (main questions/answers)  
+[3]. Report:  
+  - Software interface design  
+  - Description of functionalities  
+  - Technical solution (libraries, processing flow, etc.)  
+
+[*]. Deadline: April 24, 2026  
 
 Currently:
 
