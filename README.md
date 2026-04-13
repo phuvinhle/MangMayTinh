@@ -23,7 +23,9 @@ Submission includes:
 [*]. Deadline: April 24, 2026
 
 Currently:
+
 <img width="711" height="493" alt="image" src="https://github.com/user-attachments/assets/34931e3b-ec70-4848-a2f3-bc5f1d6a478f" />
 
 Demo from teacher:
+
 <img width="1006" height="536" alt="image" src="https://github.com/user-attachments/assets/5faf4bf6-c6a1-4096-ae86-791b7b2355c7" />
