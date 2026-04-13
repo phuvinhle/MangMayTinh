@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.4",
-    "opencv-python>=4.13.0.92",
+    "opencv-python-headless>=4.13.0.92",
     "psutil>=7.2.2",
     "pyautogui>=0.9.54",
     "pyqt5>=5.15.11",
