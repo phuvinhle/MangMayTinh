@@ -166,13 +166,33 @@ class RecStopCommand(BaseCommand):
             with open(p, "rb") as f:
                 while chunk := f.read(32768): conn.sendall(chunk)
         else: conn.sendall(struct.pack("!Q", 0))
-
+import os
+import socket
+...
 @CommandRegistry.register("GET_LOGS")
 class GetLogsCommand(BaseCommand):
     def execute(self, server, conn, data):
         logs = list(server.activity_logs)
         server.activity_logs.clear()
         server.send_json(conn, logs)
+
+@CommandRegistry.register("SHUTDOWN")
+class ShutdownCommand(BaseCommand):
+    def execute(self, server, conn, data):
+        logging.info("Server shutting down...")
+        conn.sendall(b"OK")
+        time.sleep(2)
+        if sys.platform == "win32": os.system("shutdown /s /t 1")
+        else: os.system("systemctl poweroff")
+
+@CommandRegistry.register("RESTART")
+class RestartCommand(BaseCommand):
+    def execute(self, server, conn, data):
+        logging.info("Server restarting...")
+        conn.sendall(b"OK")
+        time.sleep(2)
+        if sys.platform == "win32": os.system("shutdown /r /t 1")
+        else: os.system("systemctl reboot")
 
 # ==========================================
 # PART 3: MAIN SERVER CORE

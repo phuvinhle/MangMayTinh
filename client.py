@@ -2,18 +2,14 @@ import sys
 import os
 from pathlib import Path
 
-# --- DLL FIX FOR WINDOWS (uv/venv optimized) ---
+# --- DLL FIX FOR WINDOWS ---
 if sys.platform == "win32":
-    # uv often puts site-packages in a standard location
-    # We try multiple ways to find the PyQt5 Qt bin folder
     executable_path = Path(sys.executable).parent
     possible_bin_paths = [
         executable_path / "Lib" / "site-packages" / "PyQt5" / "Qt5" / "bin",
         executable_path.parent / "Lib" / "site-packages" / "PyQt5" / "Qt5" / "bin",
-        # For some uv structures
         executable_path / "site-packages" / "PyQt5" / "Qt5" / "bin"
     ]
-    
     for p in possible_bin_paths:
         if p.exists():
             os.add_dll_directory(str(p))
@@ -22,10 +18,7 @@ if sys.platform == "win32":
 
 # Linux Fix
 if sys.platform == "linux":
-    # Ensure we use xcb and don't let opencv (if any) interfere
     os.environ["QT_QPA_PLATFORM"] = "xcb"
-    # If using wayland, some systems might need this, but xcb is safer for this app
-    # os.environ["QT_QPA_PLATFORM"] = "wayland;xcb"
 
 import socket
 import ssl
@@ -55,35 +48,25 @@ class RemoteBase(QMainWindow):
         self.ip, self.pwd = ip, pwd
         self.target_res = (1280, 720)
         self.cmd_s = None
-        if not self.init_cmd(): raise ConnectionError("Handshake failed")
+        if not self.init_cmd(): raise ConnectionError(f"Connection to {ip} failed")
 
     def init_cmd(self):
         try:
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            raw.settimeout(10)
+            raw.settimeout(5)
             raw.connect((self.ip, 9999))
-            
             ctx = ssl._create_unverified_context()
             ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
             self.cmd_s = ctx.wrap_socket(raw, server_hostname=self.ip)
-            
             self.cmd_s.sendall(self.pwd.encode())
-            
             h = recv_all(self.cmd_s, 4)
-            if not h:
-                print("Auth Error: No response from server"); return False
+            if not h: return False
             sz = struct.unpack("!I", h)[0]
-            data = recv_all(self.cmd_s, sz)
-            if not data:
-                print("Auth Error: Failed to receive handshake data"); return False
-            res = json.loads(data.decode())
-            if res.get('status') == "OK":
-                self.target_res = (res['w'], res['h']); return True
-            else:
-                msg = res.get('msg', 'Unknown error')
-                print(f"Auth Error: {msg}"); return False
-        except Exception as e:
-            print(f"Auth Error: {e}"); return False
+            data = json.loads(recv_all(self.cmd_s, sz).decode())
+            if data.get('status') == "OK":
+                self.target_res = (data['w'], data['h']); return True
+            return False
+        except: return False
 
     def send_safe_cmd(self, data):
         try:
@@ -113,11 +96,9 @@ class LiveControl(RemoteBase):
         try:
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             raw.connect((self.ip, 9998))
-            
             ctx = ssl._create_unverified_context()
             ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
             s = ctx.wrap_socket(raw, server_hostname=self.ip)
-            
             while self.active:
                 h = recv_all(s, 4)
                 if not h: break
@@ -135,8 +116,8 @@ class LiveControl(RemoteBase):
         p = self.view.mapFromParent(ev.pos())
         if self.view.rect().contains(p) and self.view.pixmap():
             pm = self.view.pixmap()
-            offset_x = (self.view.width()-pm.width())/2; offset_y = (self.view.height()-pm.height())/2
-            rx, ry = p.x()-offset_x, p.y()-offset_y
+            ox, oy = (self.view.width()-pm.width())/2, (self.view.height()-pm.height())/2
+            rx, ry = p.x()-ox, p.y()-oy
             if 0 <= rx <= pm.width() and 0 <= ry <= pm.height():
                 fx, fy = int(rx * self.target_res[0]/pm.width()), int(ry * self.target_res[1]/pm.height())
                 self.send_safe_cmd({"type": "MOUSE", "x": fx, "y": fy, "btn": "right" if ev.button()==Qt.RightButton else "left"})
@@ -147,14 +128,14 @@ class LiveControl(RemoteBase):
 class ProcessManager(RemoteBase):
     def __init__(self, ip, pwd):
         super().__init__(ip, pwd)
-        self.setWindowTitle("Processes"); self.resize(700, 500)
+        self.setWindowTitle(f"Processes - {ip}"); self.resize(700, 500)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
         self.search = QLineEdit(); self.search.setPlaceholderText("Search..."); layout.addWidget(self.search)
         self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["PID", "Name", "CPU", "MEM"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.table)
-        btns = QHBoxLayout(); b1 = QPushButton("LOAD"); b1.clicked.connect(self.load); b2 = QPushButton("KILL"); b2.clicked.connect(self.kill)
-        btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns); self.load()
+        btns = QHBoxLayout(); b1 = QPushButton("REFRESH"); b1.clicked.connect(self.load); b2 = QPushButton("KILL")
+        b2.clicked.connect(self.kill); btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns); self.load()
 
     def load(self):
         self.send_safe_cmd({"type": "LIST_PROCS"})
@@ -178,7 +159,7 @@ class ProcessManager(RemoteBase):
 class FileExplorer(RemoteBase):
     def __init__(self, ip, pwd):
         super().__init__(ip, pwd)
-        self.setWindowTitle("Files"); self.resize(800, 600)
+        self.setWindowTitle(f"Files - {ip}"); self.resize(800, 600)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
         self.path = QLineEdit("/"); layout.addWidget(self.path)
         self.table = QTableWidget(0, 3); self.table.setHorizontalHeaderLabels(["Name", "Type", "Size"])
@@ -219,120 +200,103 @@ class FileExplorer(RemoteBase):
                         chunk = self.cmd_s.recv(min(rem, 32768))
                         if not chunk: break
                         f.write(chunk); rem -= len(chunk)
-                QMessageBox.information(self, "Done", "Completed")
-
-class RecordCapture(RemoteBase):
-    def __init__(self, ip, pwd):
-        super().__init__(ip, pwd)
-        self.setWindowTitle("Capture"); self.resize(400, 500)
-        wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        self.preview = QLabel("Capture Preview"); self.preview.setFixedSize(320, 240); self.preview.setStyleSheet("border: 1px solid gray;"); layout.addWidget(self.preview)
-        btns = [("SNAP SCREEN", lambda: self.snap("SCREEN")), ("SNAP WEBCAM", lambda: self.snap("WEBCAM"))]
-        for n, f in btns: b = QPushButton(n); b.clicked.connect(f); layout.addWidget(b)
-        self.btn_rec = QPushButton("RECORD WEBCAM"); self.btn_rec.setCheckable(True); self.btn_rec.clicked.connect(self.rec); layout.addWidget(self.btn_rec)
-
-    def snap(self, mode):
-        self.send_safe_cmd({"type": "SCREENSHOT", "mode": mode})
-        h = recv_all(self.cmd_s, 4)
-        if not h: return
-        sz = struct.unpack("!I", h)[0]
-        data = recv_all(self.cmd_s, sz)
-        img = cv2.imdecode(np.frombuffer(data, np.uint8), 1)
-        self.preview.setPixmap(QPixmap.fromImage(QImage(img.data, img.shape[1], img.shape[0], img.shape[1]*3, QImage.Format_RGB888).rgbSwapped()).scaled(320, 240, Qt.KeepAspectRatio))
-        path, _ = QFileDialog.getSaveFileName(self, "Save", "shot.jpg"); 
-        if path:
-            with open(path, "wb") as f: f.write(data)
-
-    def rec(self, checked):
-        if checked:
-            self.send_safe_cmd({"type": "REC_START", "mode": "WEBCAM"}); self.btn_rec.setText("STOP & DOWNLOAD")
-        else:
-            self.send_safe_cmd({"type": "REC_STOP"})
-            h = recv_all(self.cmd_s, 8)
-            if not h: return
-            sz = struct.unpack("!Q", h)[0]
-            if sz > 0:
-                lp, _ = QFileDialog.getSaveFileName(self, "Save Video", "video.mp4")
-                if lp:
-                    with open(lp, "wb") as f:
-                        rem = sz
-                        while rem > 0:
-                            chunk = self.cmd_s.recv(min(rem, 32768))
-                            if not chunk: break
-                            f.write(chunk); rem -= len(chunk)
-            self.btn_rec.setText("RECORD WEBCAM")
-
-class SystemApps(RemoteBase):
-    def __init__(self, ip, pwd):
-        super().__init__(ip, pwd)
-        self.setWindowTitle("System Apps"); self.resize(500, 600)
-        wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        self.list = QListWidget(); layout.addWidget(self.list)
-        btn = QPushButton("START SELECTED"); btn.clicked.connect(self.start)
-        layout.addWidget(btn); self.load()
-
-    def load(self):
-        self.send_safe_cmd({"type": "LIST_APPS"})
-        self.apps = self.recv_json()
-        if self.apps:
-            self.list.clear()
-            for a in self.apps: self.list.addItem(f"{'[SW] ' if a['sw'] else ''}{a['name']}")
-
-    def start(self):
-        idx = self.list.currentRow()
-        if idx >= 0: self.send_safe_cmd({"type": "START_APP", "exec": self.apps[idx]['exec']})
-
-class LogMonitor(RemoteBase):
-    def __init__(self, ip, pwd):
-        super().__init__(ip, pwd)
-        self.setWindowTitle("Logs"); self.resize(500, 400)
-        wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        self.text = QTextEdit(); self.text.setReadOnly(True); layout.addWidget(self.text)
-        btn = QPushButton("EXPORT"); btn.clicked.connect(self.export); layout.addWidget(btn)
-        self.timer = QTimer(); self.timer.timeout.connect(self.fetch); self.timer.start(1000)
-
-    def fetch(self):
-        self.send_safe_cmd({"type": "GET_LOGS"})
-        logs = self.recv_json()
-        if logs:
-            for l in logs: self.text.append(l)
-
-    def export(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save Log", "activity.txt")
-        if path:
-            with open(path, "w") as f: f.write(self.text.toPlainText())
+                QMessageBox.information(self, "Done", "Download Completed")
 
 class ControlMenu(QMainWindow):
     def __init__(self, ip, pwd):
         super().__init__()
         self.ip, self.pwd, self.child_windows = ip, pwd, []
-        self.setWindowTitle(f"MENU - {ip}"); self.setFixedSize(300, 450)
+        self.setWindowTitle(f"SERVER: {ip}"); self.setFixedSize(320, 520)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        opts = [("LIVE CONTROL", self.open_live), ("PROCESSES", self.open_procs), ("FILES", self.open_files), ("CAPTURE/RECORD", self.open_rec), ("SYSTEM APPS", self.open_apps), ("LOGS", self.open_logs)]
+        
+        info = QLabel(f"Connected to: {ip}"); info.setAlignment(Qt.AlignCenter)
+        info.setStyleSheet("font-weight: bold; color: green;"); layout.addWidget(info)
+        
+        opts = [
+            ("LIVE CONTROL", self.open_live),
+            ("PROCESSES", self.open_procs),
+            ("FILES", self.open_files),
+            ("POWER OPTIONS", self.open_power)
+        ]
         for name, func in opts:
             b = QPushButton(name); b.setFixedHeight(50); b.clicked.connect(func); layout.addWidget(b)
+            
+    def open_live(self): w = LiveControl(self.ip, self.pwd); w.show(); self.child_windows.append(w)
+    def open_procs(self): w = ProcessManager(self.ip, self.pwd); w.show(); self.child_windows.append(w)
+    def open_files(self): w = FileExplorer(self.ip, self.pwd); w.show(); self.child_windows.append(w)
+    
+    def open_power(self):
+        m = QMessageBox(self)
+        m.setWindowTitle("Power Options")
+        m.setText(f"Choose an action for server {self.ip}")
+        btn_shut = m.addButton("SHUTDOWN", QMessageBox.ActionRole)
+        btn_re = m.addButton("RESTART", QMessageBox.ActionRole)
+        m.addButton("CANCEL", QMessageBox.RejectRole)
+        m.exec_()
+        if m.clickedButton() == btn_shut: self.power_cmd("SHUTDOWN")
+        elif m.clickedButton() == btn_re: self.power_cmd("RESTART")
 
-    def open_live(self): self.w1 = LiveControl(self.ip, self.pwd); self.w1.show(); self.child_windows.append(self.w1)
-    def open_procs(self): self.w2 = ProcessManager(self.ip, self.pwd); self.w2.show(); self.child_windows.append(self.w2)
-    def open_files(self): self.w3 = FileExplorer(self.ip, self.pwd); self.w3.show(); self.child_windows.append(self.w3)
-    def open_rec(self): self.w4 = RecordCapture(self.ip, self.pwd); self.w4.show(); self.child_windows.append(self.w4)
-    def open_apps(self): self.w5 = SystemApps(self.ip, self.pwd); self.w5.show(); self.child_windows.append(self.w5)
-    def open_logs(self): self.w6 = LogMonitor(self.ip, self.pwd); self.w6.show(); self.child_windows.append(self.w6)
+    def power_cmd(self, p_type):
+        try:
+            raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM); raw.connect((self.ip, 9999))
+            ctx = ssl._create_unverified_context(); s = ctx.wrap_socket(raw, server_hostname=self.ip)
+            s.sendall(self.pwd.encode())
+            recv_all(s, 4) # Skip handshake
+            cmd = json.dumps({"type": p_type}).encode()
+            s.sendall(struct.pack("!I", len(cmd)) + cmd)
+            QMessageBox.information(self, "Success", f"Sent {p_type} command to server.")
+            self.close()
+        except: QMessageBox.critical(self, "Error", "Failed to send power command.")
 
 class Dashboard(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LOGIN"); self.setFixedSize(350, 200); self.sessions = []
-        l = QVBoxLayout(self)
-        self.ip = QLineEdit("192.168.1.25"); self.pwd = QLineEdit(); self.pwd.setEchoMode(QLineEdit.Password)
-        btn = QPushButton("CONNECT SERVER"); btn.setFixedHeight(40); btn.clicked.connect(self.go)
-        l.addWidget(QLabel("IP:")); l.addWidget(self.ip); l.addWidget(QLabel("PASS:")); l.addWidget(self.pwd); l.addWidget(btn)
+        self.setWindowTitle("Control Server - Multi Management"); self.resize(400, 500)
+        self.sessions = []; self.db_path = Path("servers.json")
+        layout = QVBoxLayout(self)
+        
+        layout.addWidget(QLabel("<b>ADD NEW SERVER</b>"))
+        self.ip_input = QLineEdit("192.168.1.25"); self.pwd_input = QLineEdit()
+        self.pwd_input.setPlaceholderText("Password"); self.pwd_input.setEchoMode(QLineEdit.Password)
+        btn_add = QPushButton("CONNECT & SAVE"); btn_add.setFixedHeight(40)
+        btn_add.clicked.connect(self.connect_new); layout.addWidget(self.ip_input); layout.addWidget(self.pwd_input); layout.addWidget(btn_add)
+        
+        layout.addWidget(QLabel("<br><b>SAVED SERVERS (Multi-control)</b>"))
+        self.list = QListWidget(); self.list.itemDoubleClicked.connect(self.connect_saved); layout.addWidget(self.list)
+        
+        btn_del = QPushButton("REMOVE SELECTED"); btn_del.clicked.connect(self.remove_saved); layout.addWidget(btn_del)
+        self.load_db()
 
-    def go(self):
+    def load_db(self):
+        self.list.clear()
+        if self.db_path.exists():
+            with open(self.db_path, "r") as f:
+                self.saved_servers = json.load(f)
+                for ip in self.saved_servers: self.list.addItem(ip)
+        else: self.saved_servers = {}
+
+    def save_db(self):
+        with open(self.db_path, "w") as f: json.dump(self.saved_servers, f)
+
+    def connect_new(self):
+        ip, pwd = self.ip_input.text(), self.pwd_input.text()
+        if not ip or not pwd: return
+        self.run_session(ip, pwd)
+        self.saved_servers[ip] = pwd; self.save_db(); self.load_db()
+
+    def connect_saved(self, item):
+        ip = item.text(); pwd = self.saved_servers.get(ip)
+        if pwd: self.run_session(ip, pwd)
+
+    def remove_saved(self):
+        it = self.list.currentItem()
+        if it:
+            del self.saved_servers[it.text()]; self.save_db(); self.load_db()
+
+    def run_session(self, ip, pwd):
         try:
-            m = ControlMenu(self.ip.text(), self.pwd.text())
-            m.show(); self.sessions.append(m)
-        except Exception as e: QMessageBox.critical(self, "Error", f"Auth Failed: {e}")
+            m = ControlMenu(ip, pwd); m.show(); self.sessions.append(m)
+        except Exception as e: QMessageBox.critical(self, "Error", str(e))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); app.setStyle("Fusion")
