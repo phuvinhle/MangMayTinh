@@ -9,3 +9,9 @@ dependencies = [
     "pyautogui>=0.9.54",
     "pyqt5>=5.15.11",
 ]
+
+[tool.uv]
+# Force an older pyqt5-qt5 on Windows (newer versions have no win_amd64 wheel)
+constraint-dependencies = [
+    "pyqt5-qt5==5.15.2 ; sys_platform == 'win32'",
+]
