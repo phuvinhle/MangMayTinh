@@ -32,4 +32,13 @@ Currently:
 
 Demo from teacher:
 
-<img width="1006" height="536" alt="image" src="https://github.com/user-attachments/assets/5faf4bf6-c6a1-4096-ae86-791b7b2355c7" />
+<img width="1006" height="536" alt="image" src="https://github.com/user-attachments/assets/5faf4bf6-c6a1-4096-ae86-791b7b2355c7" />   
+  
+  
+  
+Day 17/4/2026: Update
+<img width="788" height="625" alt="image" src="https://github.com/user-attachments/assets/0f9cd510-7a1a-461f-95e4-9b4d28fd3ffc" />
+Note: 
+- Need to test run live,
+- Record monitor -> error 
+- Timeout error -> sometimes

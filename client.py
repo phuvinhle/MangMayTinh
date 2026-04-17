@@ -202,11 +202,115 @@ class FileExplorer(RemoteBase):
                         f.write(chunk); rem -= len(chunk)
                 QMessageBox.information(self, "Done", "Download Completed")
 
+class SystemApps(RemoteBase):
+    def __init__(self, ip, pwd):
+        super().__init__(ip, pwd)
+        self.setWindowTitle(f"System Apps - {ip}"); self.resize(600, 500)
+        wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
+        self.search = QLineEdit(); self.search.setPlaceholderText("Search Apps..."); layout.addWidget(self.search)
+        self.table = QTableWidget(0, 2); self.table.setHorizontalHeaderLabels(["Name", "Type"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.table)
+        btns = QHBoxLayout(); b1 = QPushButton("REFRESH"); b1.clicked.connect(self.load); b2 = QPushButton("START")
+        b2.clicked.connect(self.start_app); btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns); self.load()
+
+    def load(self):
+        self.send_safe_cmd({"type": "LIST_APPS"})
+        data = self.recv_json()
+        if data:
+            self.full_data = data; self.update_table()
+
+    def update_table(self):
+        self.table.setRowCount(0)
+        for app in self.full_data:
+            if self.search.text().lower() in app['name'].lower():
+                r = self.table.rowCount(); self.table.insertRow(r)
+                self.table.setItem(r, 0, QTableWidgetItem(app['name']))
+                self.table.setItem(r, 1, QTableWidgetItem(app.get('type', 'App')))
+                self.table.item(r, 0).setData(Qt.UserRole, app['exec'])
+
+    def start_app(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            exe = self.table.item(row, 0).data(Qt.UserRole)
+            self.send_safe_cmd({"type": "START_APP", "exec": exe})
+            QMessageBox.information(self, "Info", f"Request to start {self.table.item(row, 0).text()} sent.")
+
+class ActivityLogs(RemoteBase):
+    def __init__(self, ip, pwd):
+        super().__init__(ip, pwd)
+        self.setWindowTitle(f"Activity Logs - {ip}"); self.resize(500, 400)
+        wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
+        self.logs_area = QTextEdit(); self.logs_area.setReadOnly(True); layout.addWidget(self.logs_area)
+        btns = QHBoxLayout(); b1 = QPushButton("REFRESH"); b1.clicked.connect(self.load); b2 = QPushButton("SAVE AS TXT")
+        b2.clicked.connect(self.save_logs); btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns); self.load()
+
+    def load(self):
+        self.send_safe_cmd({"type": "GET_LOGS"})
+        h = recv_all(self.cmd_s, 4)
+        if h:
+            sz = struct.unpack("!I", h)[0]
+            data = recv_all(self.cmd_s, sz).decode('utf-8')
+            if data: self.logs_area.append(data)
+
+    def save_logs(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Save Logs", "activity_logs.txt", "*.txt")
+        if path:
+            with open(path, "w") as f: f.write(self.logs_area.toPlainText())
+            QMessageBox.information(self, "Done", "Logs saved successfully.")
+
+class MediaManager(RemoteBase):
+    def __init__(self, ip, pwd):
+        super().__init__(ip, pwd)
+        self.setWindowTitle(f"Media Manager - {ip}"); self.setFixedSize(300, 250)
+        wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
+        
+        b1 = QPushButton("CAPTURE SCREEN"); b1.clicked.connect(lambda: self.capture("SCREEN"))
+        b2 = QPushButton("CAPTURE WEBCAM"); b2.clicked.connect(lambda: self.capture("WEBCAM"))
+        self.rec_btn = QPushButton("START RECORDING"); self.rec_btn.clicked.connect(self.toggle_record)
+        self.is_recording = False
+        
+        for b in [b1, b2, self.rec_btn]: b.setFixedHeight(40); layout.addWidget(b)
+
+    def capture(self, mode):
+        self.send_safe_cmd({"type": "SCREENSHOT", "mode": mode})
+        h = recv_all(self.cmd_s, 4)
+        if not h: return
+        sz = struct.unpack("!I", h)[0]
+        if sz > 0:
+            b = recv_all(self.cmd_s, sz)
+            path, _ = QFileDialog.getSaveFileName(self, f"Save {mode}", f"{mode.lower()}_{int(time.time())}.jpg", "*.jpg")
+            if path:
+                with open(path, "wb") as f: f.write(b)
+                QMessageBox.information(self, "Done", f"{mode} captured and saved.")
+        else: QMessageBox.warning(self, "Error", "Failed to capture. Check if webcam is available.")
+
+    def toggle_record(self):
+        if not self.is_recording:
+            if self.send_safe_cmd({"type": "REC_START"}):
+                self.is_recording = True; self.rec_btn.setText("STOP & DOWNLOAD")
+        else:
+            self.send_safe_cmd({"type": "REC_STOP"})
+            h = recv_all(self.cmd_s, 8)
+            if not h: return
+            sz = struct.unpack("!Q", h)[0]
+            if sz > 0:
+                path, _ = QFileDialog.getSaveFileName(self, "Save Video", f"record_{int(time.time())}.mp4", "*.mp4")
+                if path:
+                    with open(path, "wb") as f:
+                        rem = sz
+                        while rem > 0:
+                            chunk = self.cmd_s.recv(min(rem, 32768))
+                            if not chunk: break
+                            f.write(chunk); rem -= len(chunk)
+                    QMessageBox.information(self, "Done", "Video downloaded.")
+            self.is_recording = False; self.rec_btn.setText("START RECORDING")
+
 class ControlMenu(QMainWindow):
     def __init__(self, ip, pwd):
         super().__init__()
         self.ip, self.pwd, self.child_windows = ip, pwd, []
-        self.setWindowTitle(f"SERVER: {ip}"); self.setFixedSize(320, 520)
+        self.setWindowTitle(f"SERVER: {ip}"); self.setFixedSize(320, 580)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
         
         info = QLabel(f"Connected to: {ip}"); info.setAlignment(Qt.AlignCenter)
@@ -215,7 +319,10 @@ class ControlMenu(QMainWindow):
         opts = [
             ("LIVE CONTROL", self.open_live),
             ("PROCESSES", self.open_procs),
+            ("SYSTEM APPS", self.open_apps),
             ("FILES", self.open_files),
+            ("MEDIA / RECORD", self.open_media),
+            ("ACTIVITY LOGS", self.open_logs),
             ("POWER OPTIONS", self.open_power)
         ]
         for name, func in opts:
@@ -223,7 +330,10 @@ class ControlMenu(QMainWindow):
             
     def open_live(self): w = LiveControl(self.ip, self.pwd); w.show(); self.child_windows.append(w)
     def open_procs(self): w = ProcessManager(self.ip, self.pwd); w.show(); self.child_windows.append(w)
+    def open_apps(self): w = SystemApps(self.ip, self.pwd); w.show(); self.child_windows.append(w)
     def open_files(self): w = FileExplorer(self.ip, self.pwd); w.show(); self.child_windows.append(w)
+    def open_logs(self): w = ActivityLogs(self.ip, self.pwd); w.show(); self.child_windows.append(w)
+    def open_media(self): w = MediaManager(self.ip, self.pwd); w.show(); self.child_windows.append(w)
     
     def open_power(self):
         m = QMessageBox(self)
