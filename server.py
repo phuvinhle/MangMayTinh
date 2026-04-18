@@ -70,7 +70,20 @@ class StreamCtrlCommand(BaseCommand):
 @CommandRegistry.register("LIST_PROCS")
 class ListProcsCommand(BaseCommand):
     def execute(self, server, conn, data):
-        procs = [p.info for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent'])]
+        procs = []
+        for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'cmdline']):
+            try:
+                info = p.info
+                # Prefer cmdline (full path/args) for better clarity
+                name = " ".join(info['cmdline']) if info['cmdline'] else info['name']
+                if len(name) > 120: name = name[:117] + "..."
+                procs.append({
+                    "pid": info['pid'],
+                    "name": name,
+                    "cpu_percent": info['cpu_percent'],
+                    "memory_percent": info['memory_percent']
+                })
+            except: continue
         server.send_json(conn, procs)
 
 @CommandRegistry.register("KILL_PROC")

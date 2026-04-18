@@ -36,6 +36,17 @@ from PyQt5.QtGui import *
 # --- LOGGING CONFIG ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+class NumericItem(QTableWidgetItem):
+    """Custom table item for proper numerical sorting using raw data."""
+    def __init__(self, text, sort_val):
+        super().__init__(text)
+        self.sort_val = sort_val
+
+    def __lt__(self, other):
+        if isinstance(other, NumericItem):
+            return self.sort_val < other.sort_val
+        return super().__lt__(other)
+
 def recv_all(sock, n):
     data = b""
     while len(data) < n:
@@ -196,10 +207,11 @@ class ProcessManager(RemoteBase):
             for p in data:
                 if not search_txt or search_txt in p['name'].lower():
                     r = self.table.rowCount(); self.table.insertRow(r)
-                    self.table.setItem(r, 0, QTableWidgetItem(str(p['pid'])))
+                    # NumericItem(Display Text, Raw Numeric Value)
+                    self.table.setItem(r, 0, NumericItem(str(p['pid']), int(p['pid'])))
                     self.table.setItem(r, 1, QTableWidgetItem(p['name']))
-                    self.table.setItem(r, 2, QTableWidgetItem(f"{p['cpu_percent']}%"))
-                    self.table.setItem(r, 3, QTableWidgetItem(f"{round(p['memory_percent'],1)}%"))
+                    self.table.setItem(r, 2, NumericItem(f"{p['cpu_percent']}%", float(p['cpu_percent'])))
+                    self.table.setItem(r, 3, NumericItem(f"{round(p['memory_percent'],1)}%", float(p['memory_percent'])))
             
             self.table.setSortingEnabled(True)
             if selected_pid:
