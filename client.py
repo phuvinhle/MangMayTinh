@@ -141,20 +141,41 @@ class ProcessManager(RemoteBase):
         super().__init__(ip, pwd)
         self.setWindowTitle(f"Processes - {ip}"); self.resize(700, 500)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        self.search = QLineEdit(); self.search.setPlaceholderText("Search..."); layout.addWidget(self.search)
+        
+        # Search row with FIND button
+        search_layout = QHBoxLayout()
+        self.search = QLineEdit(); self.search.setPlaceholderText("Enter process name to find...")
+        self.search.returnPressed.connect(self.load) # Support Enter key
+        self.btn_find = QPushButton("FIND")
+        self.btn_find.setFixedWidth(80); self.btn_find.clicked.connect(self.load)
+        search_layout.addWidget(self.search); search_layout.addWidget(self.btn_find)
+        layout.addLayout(search_layout)
+
         self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["PID", "Name", "CPU", "MEM"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         layout.addWidget(self.table)
-        btns = QHBoxLayout(); b1 = QPushButton("REFRESH"); b1.clicked.connect(self.load); b2 = QPushButton("KILL")
-        b2.clicked.connect(self.kill); btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns); self.load()
+
+        btns = QHBoxLayout()
+        b1 = QPushButton("REFRESH ALL"); b1.clicked.connect(self.refresh_all)
+        b2 = QPushButton("KILL PROCESS"); b2.clicked.connect(self.kill)
+        b2.setStyleSheet("background-color: #f44336; color: white; font-weight: bold;")
+        btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns)
+        
+        self.load()
+
+    def refresh_all(self):
+        self.search.clear()
+        self.load()
 
     def load(self):
         self.send_safe_cmd({"type": "LIST_PROCS"})
         data = self.recv_json()
         if data:
             self.table.setRowCount(0)
+            search_txt = self.search.text().lower()
             for p in data:
-                if self.search.text().lower() in p['name'].lower():
+                if not search_txt or search_txt in p['name'].lower():
                     r = self.table.rowCount(); self.table.insertRow(r)
                     self.table.setItem(r, 0, QTableWidgetItem(str(p['pid'])))
                     self.table.setItem(r, 1, QTableWidgetItem(p['name']))
@@ -164,8 +185,11 @@ class ProcessManager(RemoteBase):
     def kill(self):
         row = self.table.currentRow()
         if row >= 0:
+            name = self.table.item(row, 1).text()
             pid = int(self.table.item(row, 0).text())
-            self.send_safe_cmd({"type": "KILL_PROC", "pid": pid}); time.sleep(0.5); self.load()
+            if QMessageBox.question(self, "Confirm", f"Kill process {name} (PID: {pid})?") == QMessageBox.Yes:
+                self.send_safe_cmd({"type": "KILL_PROC", "pid": pid})
+                time.sleep(0.5); self.load()
 
 class FileExplorer(RemoteBase):
     def __init__(self, ip, pwd):
