@@ -119,8 +119,15 @@ class Dashboard(QWidget):
             del self.saved_servers[ip]; self.save_db(); self.update_table()
 
     def closeEvent(self, ev):
-        # Shutdown everything
-        for ip in list(self.active_sessions.keys()):
-            self.stop_session(ip)
-        super().closeEvent(ev)
-        QApplication.quit()
+        reply = QMessageBox.question(self, 'Exit Confirmation', 
+                                   "Are you sure you want to exit?\nAll active server connections will be closed.", 
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            # Shutdown everything
+            for ip in list(self.active_sessions.keys()):
+                self.stop_session(ip)
+            super().closeEvent(ev)
+            QApplication.quit()
+        else:
+            ev.ignore()
