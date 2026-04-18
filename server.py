@@ -78,8 +78,7 @@ class KillProcCommand(BaseCommand):
     def execute(self, server, conn, data):
         try:
             psutil.Process(data['pid']).terminate()
-            conn.sendall(b"OK")
-        except: conn.sendall(b"FAIL")
+        except: pass
 
 @CommandRegistry.register("LIST_APPS")
 class ListAppsCommand(BaseCommand):
@@ -115,10 +114,8 @@ class StartAppCommand(BaseCommand):
         try:
             if sys.platform == "win32": os.startfile(data['exec'])
             else: subprocess.Popen(data['exec'], shell=True, start_new_session=True)
-            conn.sendall(b"OK")
         except Exception as e:
             logging.error(f"Start App Error: {e}")
-            conn.sendall(b"FAIL")
 
 @CommandRegistry.register("LIST_FILES")
 class ListFilesCommand(BaseCommand):
@@ -182,25 +179,28 @@ class ScreenshotCommand(BaseCommand):
 @CommandRegistry.register("REC_START")
 class RecStartCommand(BaseCommand):
     def execute(self, server, conn, data):
-        server.is_recording = True
-        # Initial recorder will be handled in handle_stream to match resolution
-        conn.sendall(b"OK")
+        if not server.is_recording:
+            server.is_recording = True
+            threading.Thread(target=server._record_worker, daemon=True).start()
 
 @CommandRegistry.register("REC_STOP")
 class RecStopCommand(BaseCommand):
     def execute(self, server, conn, data):
         server.is_recording = False
-        time.sleep(0.5) # Give it a moment to finalize
-        if server.recorder:
-            server.recorder.release()
-            server.recorder = None
+        # Wait for worker to finish
+        for _ in range(20):
+            if server.recorder is None: break
+            time.sleep(0.1)
         
         p = Path("temp_rec.mp4")
         if p.exists():
             sz = p.stat().st_size
+            logging.info(f"Sending video file: {sz} bytes")
             conn.sendall(struct.pack("!Q", sz))
             with open(p, "rb") as f:
-                while chunk := f.read(32768): conn.sendall(chunk)
+                while chunk := f.read(65536):
+                    try: conn.sendall(chunk)
+                    except: break
             try: p.unlink()
             except: pass
         else:
@@ -314,6 +314,34 @@ class ControlServer:
             except socket.timeout: continue
             except Exception as e: logging.error(f"Stream Error: {e}")
 
+    def _record_worker(self):
+        logging.info("Recording worker started.")
+        cam = cv2.VideoCapture(0)
+        with mss.mss() as sct:
+            try:
+                while self.running and self.is_recording:
+                    if self.stream_mode == "SCREEN":
+                        img = np.array(sct.grab(sct.monitors[1]))
+                        f = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                    else:
+                        ret, f = cam.read()
+                        if not ret: f = np.zeros((480, 640, 3), np.uint8)
+                    
+                    if self.recorder is None:
+                        h, w = f.shape[:2]
+                        self.recorder = cv2.VideoWriter("temp_rec.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
+                    
+                    self.recorder.write(f)
+                    time.sleep(0.08) # Target ~12 FPS
+            except Exception as e:
+                logging.error(f"Record Worker Error: {e}")
+            finally:
+                if self.recorder:
+                    self.recorder.release()
+                    self.recorder = None
+                cam.release()
+                logging.info("Recording worker stopped and file finalized.")
+
     def handle_stream(self, conn):
         cam = cv2.VideoCapture(0)
         with mss.mss() as sct:
@@ -325,16 +353,6 @@ class ControlServer:
                     else:
                         ret, f = cam.read()
                         if not ret: f = np.zeros((480, 640, 3), np.uint8)
-                    
-                    # Recording logic
-                    if self.is_recording:
-                        if self.recorder is None:
-                            h, w = f.shape[:2]
-                            self.recorder = cv2.VideoWriter("temp_rec.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
-                        self.recorder.write(f)
-                    elif self.recorder:
-                        self.recorder.release()
-                        self.recorder = None
                     
                     if not self.is_streaming: 
                         time.sleep(0.5)

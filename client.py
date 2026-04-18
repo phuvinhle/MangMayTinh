@@ -26,11 +26,15 @@ import struct
 import cv2
 import json
 import time
+import logging
 import numpy as np
 import threading
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
+
+# --- LOGGING CONFIG ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def recv_all(sock, n):
     data = b""
@@ -53,7 +57,7 @@ class RemoteBase(QMainWindow):
     def init_cmd(self):
         try:
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            raw.settimeout(5)
+            raw.settimeout(10) # Increased default timeout to 10s
             raw.connect((self.ip, 9999))
             ctx = ssl._create_unverified_context()
             ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
@@ -66,20 +70,27 @@ class RemoteBase(QMainWindow):
             if data.get('status') == "OK":
                 self.target_res = (data['w'], data['h']); return True
             return False
-        except: return False
+        except socket.timeout:
+            QMessageBox.critical(None, "Timeout", "Connection timed out. Please check server status."); return False
+        except Exception as e:
+            logging.error(f"Init Error: {e}"); return False
 
     def send_safe_cmd(self, data):
         try:
             p = json.dumps(data).encode('utf-8')
             self.cmd_s.sendall(struct.pack("!I", len(p)) + p); return True
-        except: return False
+        except Exception as e:
+            QMessageBox.warning(self, "Connection Error", "Lost connection to server."); return False
 
     def recv_json(self):
         try:
             h = recv_all(self.cmd_s, 4)
             if not h: return None
             sz = struct.unpack("!I", h)[0]
-            return json.loads(recv_all(self.cmd_s, sz).decode())
+            data = recv_all(self.cmd_s, sz)
+            return json.loads(data.decode()) if data else None
+        except socket.timeout:
+            QMessageBox.warning(self, "Timeout", "Server response timed out."); return None
         except: return None
 
 class LiveControl(RemoteBase):
@@ -187,20 +198,36 @@ class FileExplorer(RemoteBase):
         row = self.table.currentRow()
         if row < 0: return
         name = self.table.item(row, 0).text()
-        self.send_safe_cmd({"type": "DOWNLOAD", "path": str(Path(self.path.text())/name)})
-        h = recv_all(self.cmd_s, 8)
-        if not h: return
-        sz = struct.unpack("!Q", h)[0]
-        if sz > 0:
-            lp, _ = QFileDialog.getSaveFileName(self, "Save", name if "." in name else name+".zip")
-            if lp:
-                with open(lp, "wb") as f:
-                    rem = sz
-                    while rem > 0:
-                        chunk = self.cmd_s.recv(min(rem, 32768))
-                        if not chunk: break
-                        f.write(chunk); rem -= len(chunk)
-                QMessageBox.information(self, "Done", "Download Completed")
+        full_path = str(Path(self.path.text())/name)
+        if self.send_safe_cmd({"type": "DOWNLOAD", "path": full_path}):
+            h = recv_all(self.cmd_s, 8)
+            if not h: return
+            sz = struct.unpack("!Q", h)[0]
+            if sz > 0:
+                lp, _ = QFileDialog.getSaveFileName(self, "Save File", name if "." in name else name+".zip")
+                if lp:
+                    progress = QProgressDialog(f"Downloading {name}...", "Cancel", 0, 100, self)
+                    progress.setWindowModality(Qt.WindowModal); progress.show()
+                    old_timeout = self.cmd_s.gettimeout()
+                    self.cmd_s.settimeout(0.1) # Short timeout for responsiveness
+                    try:
+                        with open(lp, "wb") as f:
+                            rem = sz
+                            while rem > 0:
+                                if progress.wasCanceled(): break
+                                try:
+                                    chunk = self.cmd_s.recv(min(rem, 65536))
+                                    if not chunk: break
+                                    f.write(chunk); rem -= len(chunk)
+                                    progress.setValue(int((sz - rem) * 100 / sz))
+                                except socket.timeout: pass # Keep UI alive
+                                QApplication.processEvents()
+                        if not progress.wasCanceled():
+                            QMessageBox.information(self, "Done", "Download Completed")
+                    finally:
+                        self.cmd_s.settimeout(old_timeout); progress.close()
+            else:
+                QMessageBox.warning(self, "Error", "File not found or empty.")
 
 class SystemApps(RemoteBase):
     def __init__(self, ip, pwd):
@@ -273,17 +300,34 @@ class MediaManager(RemoteBase):
         for b in [b1, b2, self.rec_btn]: b.setFixedHeight(40); layout.addWidget(b)
 
     def capture(self, mode):
-        self.send_safe_cmd({"type": "SCREENSHOT", "mode": mode})
-        h = recv_all(self.cmd_s, 4)
-        if not h: return
-        sz = struct.unpack("!I", h)[0]
-        if sz > 0:
-            b = recv_all(self.cmd_s, sz)
-            path, _ = QFileDialog.getSaveFileName(self, f"Save {mode}", f"{mode.lower()}_{int(time.time())}.jpg", "*.jpg")
-            if path:
-                with open(path, "wb") as f: f.write(b)
-                QMessageBox.information(self, "Done", f"{mode} captured and saved.")
-        else: QMessageBox.warning(self, "Error", "Failed to capture. Check if webcam is available.")
+        if self.send_safe_cmd({"type": "SCREENSHOT", "mode": mode}):
+            h = recv_all(self.cmd_s, 4)
+            if not h: return
+            sz = struct.unpack("!I", h)[0]
+            if sz > 0:
+                path, _ = QFileDialog.getSaveFileName(self, f"Save {mode}", f"{mode.lower()}_{int(time.time())}.jpg", "*.jpg")
+                if path:
+                    progress = QProgressDialog(f"Downloading {mode}...", "Cancel", 0, 100, self)
+                    progress.setWindowModality(Qt.WindowModal); progress.show()
+                    old_timeout = self.cmd_s.gettimeout()
+                    self.cmd_s.settimeout(0.1)
+                    try:
+                        with open(path, "wb") as f:
+                            rem = sz
+                            while rem > 0:
+                                if progress.wasCanceled(): break
+                                try:
+                                    chunk = self.cmd_s.recv(min(rem, 131072))
+                                    if not chunk: break
+                                    f.write(chunk); rem -= len(chunk)
+                                    progress.setValue(int((sz - rem) * 100 / sz))
+                                except socket.timeout: pass
+                                QApplication.processEvents()
+                        if not progress.wasCanceled():
+                            QMessageBox.information(self, "Done", f"{mode} captured and saved.")
+                    finally:
+                        self.cmd_s.settimeout(old_timeout); progress.close()
+            else: QMessageBox.warning(self, "Error", "Failed to capture. Check if webcam is available.")
 
     def toggle_record(self):
         if not self.is_recording:
@@ -291,19 +335,39 @@ class MediaManager(RemoteBase):
                 self.is_recording = True; self.rec_btn.setText("STOP & DOWNLOAD")
         else:
             self.send_safe_cmd({"type": "REC_STOP"})
+            # Small delay to let server finalize and avoid race conditions
+            time.sleep(0.5)
             h = recv_all(self.cmd_s, 8)
-            if not h: return
+            if not h: 
+                QMessageBox.warning(self, "Error", "Failed to get video size from server.")
+                self.is_recording = False; self.rec_btn.setText("START RECORDING")
+                return
             sz = struct.unpack("!Q", h)[0]
             if sz > 0:
                 path, _ = QFileDialog.getSaveFileName(self, "Save Video", f"record_{int(time.time())}.mp4", "*.mp4")
                 if path:
-                    with open(path, "wb") as f:
-                        rem = sz
-                        while rem > 0:
-                            chunk = self.cmd_s.recv(min(rem, 32768))
-                            if not chunk: break
-                            f.write(chunk); rem -= len(chunk)
-                    QMessageBox.information(self, "Done", "Video downloaded.")
+                    progress = QProgressDialog("Downloading Video Record...", "Cancel", 0, 100, self)
+                    progress.setWindowModality(Qt.WindowModal); progress.show()
+                    old_timeout = self.cmd_s.gettimeout()
+                    self.cmd_s.settimeout(0.1)
+                    try:
+                        with open(path, "wb") as f:
+                            rem = sz
+                            while rem > 0:
+                                if progress.wasCanceled(): break
+                                try:
+                                    chunk = self.cmd_s.recv(min(rem, 131072))
+                                    if not chunk: break
+                                    f.write(chunk); rem -= len(chunk)
+                                    progress.setValue(int((sz - rem) * 100 / sz))
+                                except socket.timeout: pass
+                                QApplication.processEvents()
+                        if not progress.wasCanceled():
+                            QMessageBox.information(self, "Done", "Video downloaded.")
+                    finally:
+                        self.cmd_s.settimeout(old_timeout); progress.close()
+            else:
+                QMessageBox.warning(self, "Info", "No video data recorded or file is empty.")
             self.is_recording = False; self.rec_btn.setText("START RECORDING")
 
 class ControlMenu(QMainWindow):
