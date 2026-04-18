@@ -76,6 +76,7 @@ class RemoteBase(QMainWindow):
 
     def init_cmd(self):
         try:
+            logging.info(f"Connecting to Server {self.ip} on port 9999...")
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             raw.settimeout(10)
             raw.connect((self.ip, 9999))
@@ -84,22 +85,31 @@ class RemoteBase(QMainWindow):
             self.cmd_s = ctx.wrap_socket(raw, server_hostname=self.ip)
             self.cmd_s.sendall(self.pwd.encode())
             h = recv_all(self.cmd_s, 4)
-            if not h: return False
+            if not h: 
+                logging.error("Failed to receive auth response header.")
+                return False
             sz = struct.unpack("!I", h)[0]
             data = json.loads(recv_all(self.cmd_s, sz).decode())
             if data.get('status') == "OK":
-                self.target_res = (data['w'], data['h']); return True
+                self.target_res = (data['w'], data['h'])
+                logging.info(f"Auth Success! Native Resolution: {self.target_res}")
+                return True
+            logging.error(f"Auth Denied: {data.get('msg')}")
             return False
         except socket.timeout:
+            logging.error("Connection Timeout!")
             QMessageBox.critical(None, "Timeout", "Connection timed out. Please check server status."); return False
         except Exception as e:
-            logging.error(f"Init Error: {e}"); return False
+            logging.error(f"Init Connection Error: {e}"); return False
 
     def send_safe_cmd(self, data):
         try:
             p = json.dumps(data).encode('utf-8')
-            self.cmd_s.sendall(struct.pack("!I", len(p)) + p); return True
-        except:
+            self.cmd_s.sendall(struct.pack("!I", len(p)) + p)
+            logging.info(f"Command Sent: {data['type']}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to send command {data.get('type')}: {e}")
             self.handle_disconnect(); return False
 
     def recv_json(self):
@@ -108,10 +118,14 @@ class RemoteBase(QMainWindow):
             if not h: return None
             sz = struct.unpack("!I", h)[0]
             data = recv_all(self.cmd_s, sz)
-            return json.loads(data.decode()) if data else None
+            res = json.loads(data.decode()) if data else None
+            if res: logging.info(f"Response Received: {len(data)} bytes")
+            return res
         except socket.timeout:
+            logging.error("Server response timeout.")
             QMessageBox.warning(self, "Timeout", "Server response timed out."); return None
-        except:
+        except Exception as e:
+            logging.error(f"Receive Error: {e}")
             self.handle_disconnect(); return None
 
 class LiveControl(RemoteBase):
