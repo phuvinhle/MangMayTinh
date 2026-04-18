@@ -17,6 +17,7 @@ import re
 import zipfile
 import sys
 import os
+import ctypes
 from pathlib import Path
 from pynput import keyboard, mouse
 
@@ -261,9 +262,11 @@ class ControlServer:
         self.is_recording = False
         self.recorder = None
         self.activity_logs = []
+        self.last_window = ""
         
         # Setup Listeners
         self.start_listeners()
+        threading.Thread(target=self._window_tracker, daemon=True).start()
         self.ssl_context = self.setup_ssl()
         
         try:
@@ -272,6 +275,38 @@ class ControlServer:
         except: self.native_res = (1280, 720)
 
         print(f"\n{'='*50}\nCONTROL SERVER - ONLINE\nIP: {self.get_local_ip()}\nPASS: {self.password}\n{'='*50}\n")
+
+    def get_active_window(self):
+        """Cross-platform active window title detection."""
+        try:
+            if sys.platform == "win32":
+                user32 = ctypes.windll.user32
+                hwnd = user32.GetForegroundWindow()
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buf = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buf, length + 1)
+                    return buf.value
+            elif sys.platform == "linux":
+                # Using xprop (already verified on system)
+                res = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], stderr=subprocess.DEVNULL).decode()
+                wid = res.split()[-1]
+                if wid != "0x0":
+                    res = subprocess.check_output(['xprop', '-id', wid, 'WM_NAME', '_NET_WM_NAME'], stderr=subprocess.DEVNULL).decode()
+                    # Try to find UTF-8 title or standard name
+                    match = re.search(r' = "(.*)"', res)
+                    if match: return match.group(1)
+        except: pass
+        return "Unknown"
+
+    def _window_tracker(self):
+        """Background thread to detect app/window changes."""
+        while self.running:
+            curr = self.get_active_window()
+            if curr and curr != self.last_window:
+                self.last_window = curr
+                self.activity_logs.append(f"\n{'='*20}\n[WINDOW CHANGED]\nTitle: {curr}\nTime: {time.strftime('%H:%M:%S')}\n{'='*20}")
+            time.sleep(1.0)
 
     def get_local_ip(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
