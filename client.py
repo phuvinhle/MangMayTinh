@@ -537,7 +537,43 @@ class Dashboard(QWidget):
 
     def connect_saved(self, item):
         ip = item.text(); pwd = self.saved_servers.get(ip)
-        if pwd: self.run_session(ip, pwd)
+        if not pwd: return
+        
+        # Verify connection first
+        if self.verify_and_run(ip, pwd): return
+        
+        # If failed, ask for new password
+        new_pwd, ok = QInputDialog.getText(self, "Authentication Failed", 
+                                         f"Could not connect to {ip} with saved password.\nEnter new password:", 
+                                         QLineEdit.Password)
+        if ok and new_pwd:
+            if self.verify_and_run(ip, new_pwd):
+                # Update DB with working password
+                self.saved_servers[ip] = new_pwd
+                self.save_db()
+            else:
+                QMessageBox.critical(self, "Error", "Still cannot connect. Server might be offline or password is wrong.")
+
+    def verify_and_run(self, ip, pwd):
+        """Try to connect and verify password. Return True if successful."""
+        try:
+            raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            raw.settimeout(3) # Short timeout for verification
+            raw.connect((ip, 9999))
+            ctx = ssl._create_unverified_context()
+            ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+            s = ctx.wrap_socket(raw, server_hostname=ip)
+            s.sendall(pwd.encode())
+            h = recv_all(s, 4)
+            if not h: return False
+            sz = struct.unpack("!I", h)[0]
+            data = json.loads(recv_all(s, sz).decode())
+            s.close()
+            
+            if data.get('status') == "OK":
+                self.run_session(ip, pwd); return True
+            return False
+        except: return False
 
     def remove_saved(self):
         it = self.list.currentItem()
