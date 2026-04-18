@@ -102,7 +102,8 @@ class ControlServer:
         import datetime
         key = rsa.generate_private_key(65537, 2048)
         sub = iss = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, u"localhost")])
-        cert = x509.CertificateBuilder().subject_name(sub).issuer_name(iss).public_key(key.public_key()).serial_number(x509.random_serial_number()).not_valid_before(datetime.datetime.utcnow()).not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365)).sign(key, hashes.SHA256())
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = x509.CertificateBuilder().subject_name(sub).issuer_name(iss).public_key(key.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now).not_valid_after(now + datetime.timedelta(days=365)).sign(key, hashes.SHA256())
         with open(kp, "wb") as f: f.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
         with open(cp, "wb") as f: f.write(cert.public_bytes(serialization.Encoding.PEM))
 

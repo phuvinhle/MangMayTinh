@@ -38,8 +38,9 @@ class FileExplorer(RemoteBase, QMainWindow):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         
-        # Always add the ".." back-navigation entry if not at root
-        if self.path.text() != "/":
+        # Always add the ".." back-navigation entry if not at root (cross-platform check)
+        curr_path = Path(self.path.text())
+        if curr_path != curr_path.parent:
             r = self.table.rowCount(); self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem("..")); self.table.setItem(r, 1, QTableWidgetItem("Folder"))
 
