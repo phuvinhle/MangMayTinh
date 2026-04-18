@@ -63,10 +63,15 @@ Update full features
 <img width="503" height="405" alt="image" src="https://github.com/user-attachments/assets/0368cbe9-5bc5-4287-bf95-c1c66bdd787e" />
 - Power options:
 <img width="296" height="113" alt="image" src="https://github.com/user-attachments/assets/b696aa21-bcf4-462c-8ed2-02720d986d42" />
-* Note:
+* Note:  
 - Allow multi-control features  
+
 - Allow multi-control servers  
+
 - Connect the internal network  
+
 - Workwell on linux OS -> need to check on Window OS  
+
 - Technical -> Update soon  
+
 - AI: Gemini CLI  
