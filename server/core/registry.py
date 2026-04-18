@@ -1,10 +1,13 @@
 class BaseCommand:
     """Interface for all server commands."""
+
     def execute(self, server, conn, data):
         raise NotImplementedError
 
+
 class CommandRegistry:
     """Registry to map command types to their respective classes."""
+
     _commands = {}
 
     @classmethod
