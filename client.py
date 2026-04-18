@@ -279,30 +279,66 @@ class SystemApps(RemoteBase):
         super().__init__(ip, pwd, controller)
         self.setWindowTitle(f"System Apps - {ip}"); self.resize(600, 500)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        self.search = QLineEdit(); self.search.setPlaceholderText("Search Apps..."); layout.addWidget(self.search)
+        
+        # Search row with FIND and REFRESH buttons (ProcessManager Style)
+        search_layout = QHBoxLayout()
+        self.search = QLineEdit(); self.search.setPlaceholderText("Enter app name to filter...")
+        self.search.textChanged.connect(self.update_table) # Local filter as you type
+        
+        self.btn_find = QPushButton("FIND")
+        self.btn_find.setFixedWidth(70); self.btn_find.clicked.connect(self.load)
+        
+        self.btn_refresh = QPushButton("REFRESH")
+        self.btn_refresh.setFixedWidth(70); self.btn_refresh.clicked.connect(self.refresh_all)
+        
+        search_layout.addWidget(self.search); search_layout.addWidget(self.btn_find); search_layout.addWidget(self.btn_refresh)
+        layout.addLayout(search_layout)
+
         self.table = QTableWidget(0, 2); self.table.setHorizontalHeaderLabels(["Name", "Type"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); layout.addWidget(self.table)
-        btns = QHBoxLayout(); b1 = QPushButton("REFRESH"); b1.clicked.connect(self.load); b2 = QPushButton("START")
-        b2.clicked.connect(self.start_app); btns.addWidget(b1); btns.addWidget(b2); layout.addLayout(btns); self.load()
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSortingEnabled(True)
+        layout.addWidget(self.table)
+
+        btns = QHBoxLayout()
+        self.btn_start = QPushButton("START APPLICATION")
+        self.btn_start.setFixedHeight(40); self.btn_start.clicked.connect(self.start_app)
+        self.btn_start.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        btns.addStretch(); btns.addWidget(self.btn_start)
+        layout.addLayout(btns)
+        
+        self.full_data = []
+        self.load()
+
+    def refresh_all(self):
+        self.search.clear()
+        self.load()
 
     def load(self):
         self.send_safe_cmd({"type": "LIST_APPS"})
         data = self.recv_json()
-        if data: self.full_data = data; self.update_table()
+        if data:
+            self.full_data = data
+            self.update_table()
 
     def update_table(self):
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
+        search_txt = self.search.text().lower()
         for app in self.full_data:
-            if self.search.text().lower() in app['name'].lower():
+            if not search_txt or search_txt in app['name'].lower():
                 r = self.table.rowCount(); self.table.insertRow(r)
-                self.table.setItem(r, 0, QTableWidgetItem(app['name'])); self.table.setItem(r, 1, QTableWidgetItem(app.get('type', 'App')))
+                self.table.setItem(r, 0, QTableWidgetItem(app['name']))
+                self.table.setItem(r, 1, QTableWidgetItem(app.get('type', 'App')))
                 self.table.item(r, 0).setData(Qt.UserRole, app['exec'])
+        self.table.setSortingEnabled(True)
 
     def start_app(self):
         row = self.table.currentRow()
         if row >= 0:
+            name = self.table.item(row, 0).text()
             exe = self.table.item(row, 0).data(Qt.UserRole)
-            self.send_safe_cmd({"type": "START_APP", "exec": exe}); QMessageBox.information(self, "Info", f"Request to start {self.table.item(row, 0).text()} sent.")
+            self.send_safe_cmd({"type": "START_APP", "exec": exe})
+            QMessageBox.information(self, "Info", f"Request to start {name} sent.")
 
 class ActivityLogs(RemoteBase):
     def __init__(self, ip, pwd, controller=None):
