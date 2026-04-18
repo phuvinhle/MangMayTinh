@@ -485,9 +485,10 @@ class MediaManager(RemoteBase):
             self.is_recording = False; self.rec_btn.setText("START RECORDING")
 
 class ControlMenu(RemoteBase):
-    def __init__(self, ip, pwd):
+    def __init__(self, ip, pwd, on_close_callback=None):
         super().__init__(ip, pwd)
         self.ip, self.pwd, self.child_windows = ip, pwd, []
+        self.on_close_callback = on_close_callback
         self.setWindowTitle(f"SERVER: {ip}"); self.setFixedSize(320, 580)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
         info = QLabel(f"Connected to: {ip}"); info.setAlignment(Qt.AlignCenter); info.setStyleSheet("font-weight: bold; color: green;"); layout.addWidget(info)
@@ -506,7 +507,10 @@ class ControlMenu(RemoteBase):
             try: w.close()
             except: pass
         self.close()
-    def closeEvent(self, ev): self.close_all_session(); super().closeEvent(ev)
+    def closeEvent(self, ev):
+        self.close_all_session()
+        if self.on_close_callback: self.on_close_callback(self.ip)
+        super().closeEvent(ev)
     def open_power(self):
         m = QMessageBox(self); m.setWindowTitle("Power Options"); m.setText(f"Choose an action for server {self.ip}")
         btn_shut, btn_re = m.addButton("SHUTDOWN", QMessageBox.ActionRole), m.addButton("RESTART", QMessageBox.ActionRole)
@@ -524,37 +528,75 @@ class ControlMenu(RemoteBase):
 class Dashboard(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Control Server - Multi Management"); self.resize(400, 500)
-        self.sessions, self.db_path = [], Path("servers.json")
+        self.setWindowTitle("Control Server - Multi Management"); self.resize(500, 600)
+        self.active_sessions, self.db_path = {}, Path("servers.json")
         layout = QVBoxLayout(self); layout.addWidget(QLabel("<b>ADD NEW SERVER</b>"))
-        self.ip_input, self.pwd_input = QLineEdit("192.168.1.25"), QLineEdit()
-        self.pwd_input.setPlaceholderText("Password"); self.pwd_input.setEchoMode(QLineEdit.Password)
-        btn_add = QPushButton("CONNECT & SAVE"); btn_add.setFixedHeight(40); btn_add.clicked.connect(self.connect_new)
-        layout.addWidget(self.ip_input); layout.addWidget(self.pwd_input); layout.addWidget(btn_add)
-        layout.addWidget(QLabel("<br><b>SAVED SERVERS (Multi-control)</b>"))
-        self.list = QListWidget(); self.list.itemDoubleClicked.connect(self.connect_saved); layout.addWidget(self.list)
-        btn_del = QPushButton("REMOVE SELECTED"); btn_del.clicked.connect(self.remove_saved); layout.addWidget(btn_del); self.load_db()
+        
+        form = QHBoxLayout()
+        self.ip_input = QLineEdit("192.168.1.25"); self.ip_input.setPlaceholderText("Server IP")
+        self.pwd_input = QLineEdit(); self.pwd_input.setPlaceholderText("Password"); self.pwd_input.setEchoMode(QLineEdit.Password)
+        btn_add = QPushButton("ADD & CONNECT"); btn_add.clicked.connect(self.connect_new)
+        form.addWidget(self.ip_input); form.addWidget(self.pwd_input); form.addWidget(btn_add)
+        layout.addLayout(form)
+        
+        layout.addWidget(QLabel("<br><b>CONNECTION MANAGER</b>"))
+        self.table = QTableWidget(0, 3); self.table.setHorizontalHeaderLabels(["Server IP", "Status", "Actions"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.table)
+        
+        self.btn_del = QPushButton("REMOVE SELECTED FROM LIST"); self.btn_del.clicked.connect(self.remove_saved)
+        layout.addWidget(self.btn_del)
+        self.load_db()
 
     def load_db(self):
-        self.list.clear()
         if self.db_path.exists():
-            with open(self.db_path, "r") as f: self.saved_servers = json.load(f); [self.list.addItem(ip) for ip in self.saved_servers]
+            with open(self.db_path, "r") as f: self.saved_servers = json.load(f)
         else: self.saved_servers = {}
+        self.update_table()
+
     def save_db(self):
         with open(self.db_path, "w") as f: json.dump(self.saved_servers, f)
+
+    def update_table(self):
+        self.table.setRowCount(0)
+        for ip, pwd in self.saved_servers.items():
+            r = self.table.rowCount(); self.table.insertRow(r)
+            self.table.setItem(r, 0, QTableWidgetItem(ip))
+            
+            is_active = ip in self.active_sessions
+            status_item = QTableWidgetItem("CONNECTED" if is_active else "OFFLINE")
+            status_item.setForeground(QColor("green" if is_active else "red"))
+            self.table.setItem(r, 1, status_item)
+            
+            btn_box = QWidget(); btn_layout = QHBoxLayout(btn_box); btn_layout.setContentsMargins(2, 2, 2, 2)
+            if is_active:
+                b_open = QPushButton("OPEN"); b_open.clicked.connect(lambda _, i=ip: self.active_sessions[i].show())
+                b_stop = QPushButton("STOP"); b_stop.setStyleSheet("color: red;"); b_stop.clicked.connect(lambda _, i=ip: self.stop_session(i))
+                btn_layout.addWidget(b_open); btn_layout.addWidget(b_stop)
+            else:
+                b_conn = QPushButton("CONNECT"); b_conn.clicked.connect(lambda _, i=ip, p=pwd: self.connect_saved(i, p))
+                btn_layout.addWidget(b_conn)
+            self.table.setCellWidget(r, 2, btn_box)
+
     def connect_new(self):
         ip, pwd = self.ip_input.text(), self.pwd_input.text()
-        if ip and pwd: self.run_session(ip, pwd); self.saved_servers[ip] = pwd; self.save_db(); self.load_db()
-    def connect_saved(self, item):
-        ip, pwd = item.text(), self.saved_servers.get(item.text())
-        if not pwd: return
-        if self.verify_and_run(ip, pwd): return
-        new_pwd, ok = QInputDialog.getText(self, "Authentication Failed", 
-                                         f"Could not connect to {ip} with saved password.\nEnter new password:", 
-                                         QLineEdit.Password)
-        if ok and new_pwd:
-            if self.verify_and_run(ip, new_pwd): self.saved_servers[ip] = new_pwd; self.save_db()
-            else: QMessageBox.critical(self, "Error", "Still cannot connect. Server might be offline or password is wrong.")
+        if ip and pwd:
+            if ip in self.active_sessions: QMessageBox.warning(self, "Error", "Already connected."); return
+            if self.verify_and_run(ip, pwd):
+                self.saved_servers[ip] = pwd; self.save_db(); self.update_table()
+            else: QMessageBox.critical(self, "Error", "Could not connect. Check IP/Pass.")
+
+    def connect_saved(self, ip, pwd):
+        if self.verify_and_run(ip, pwd): self.update_table()
+        else:
+            new_pwd, ok = QInputDialog.getText(self, "Authentication Failed", 
+                                             f"Could not connect to {ip} with saved password.\nEnter new password:", 
+                                             QLineEdit.Password)
+            if ok and new_pwd:
+                if self.verify_and_run(ip, new_pwd):
+                    self.saved_servers[ip] = new_pwd; self.save_db(); self.update_table()
+                else: QMessageBox.critical(self, "Error", "Connection failed again.")
+
     def verify_and_run(self, ip, pwd):
         try:
             raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM); raw.settimeout(3); raw.connect((ip, 9999))
@@ -565,11 +607,34 @@ class Dashboard(QWidget):
                 if data.get('status') == "OK": self.run_session(ip, pwd); return True
             return False
         except: return False
-    def remove_saved(self):
-        if self.list.currentItem(): del self.saved_servers[self.list.currentItem().text()]; self.save_db(); self.load_db()
+
     def run_session(self, ip, pwd):
-        try: m = ControlMenu(ip, pwd); m.show(); self.sessions.append(m)
+        try:
+            m = ControlMenu(ip, pwd, on_close_callback=self.on_session_closed)
+            m.show(); self.active_sessions[ip] = m
         except Exception as e: QMessageBox.critical(self, "Error", str(e))
+
+    def on_session_closed(self, ip):
+        if ip in self.active_sessions: del self.active_sessions[ip]
+        self.update_table()
+
+    def stop_session(self, ip):
+        if ip in self.active_sessions:
+            self.active_sessions[ip].close_all_session() # This triggers on_session_closed
+
+    def remove_saved(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            ip = self.table.item(row, 0).text()
+            if ip in self.active_sessions: self.stop_session(ip)
+            del self.saved_servers[ip]; self.save_db(); self.update_table()
+
+    def closeEvent(self, ev):
+        # Shutdown everything
+        for ip in list(self.active_sessions.keys()):
+            self.stop_session(ip)
+        super().closeEvent(ev)
+        QApplication.quit()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv); app.setStyle("Fusion"); d = Dashboard(); d.show(); sys.exit(app.exec_())
