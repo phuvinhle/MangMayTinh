@@ -335,20 +335,41 @@ class MediaManager(RemoteBase):
                 self.is_recording = True; self.rec_btn.setText("STOP & DOWNLOAD")
         else:
             self.send_safe_cmd({"type": "REC_STOP"})
-            # Small delay to let server finalize and avoid race conditions
-            time.sleep(0.5)
-            h = recv_all(self.cmd_s, 8)
-            if not h: 
-                QMessageBox.warning(self, "Error", "Failed to get video size from server.")
-                self.is_recording = False; self.rec_btn.setText("START RECORDING")
+            
+            # Show "Processing" popup immediately
+            progress = QProgressDialog("Server is finalizing video file...", "Cancel", 0, 0, self)
+            progress.setWindowTitle("Processing"); progress.setWindowModality(Qt.WindowModal)
+            progress.setRange(0, 0) # Busy indicator mode
+            progress.show()
+            QApplication.processEvents()
+
+            # Non-blocking wait for the 8-byte size header
+            old_timeout = self.cmd_s.gettimeout()
+            self.cmd_s.settimeout(0.1)
+            h = b""
+            try:
+                while len(h) < 8:
+                    if progress.wasCanceled(): break
+                    try:
+                        chunk = self.cmd_s.recv(8 - len(h))
+                        if not chunk: break
+                        h += chunk
+                    except socket.timeout: pass
+                    QApplication.processEvents()
+            finally:
+                self.cmd_s.settimeout(old_timeout)
+
+            if progress.wasCanceled() or len(h) < 8:
+                progress.close(); self.is_recording = False; self.rec_btn.setText("START RECORDING")
                 return
+
             sz = struct.unpack("!Q", h)[0]
             if sz > 0:
                 path, _ = QFileDialog.getSaveFileName(self, "Save Video", f"record_{int(time.time())}.mp4", "*.mp4")
                 if path:
-                    progress = QProgressDialog("Downloading Video Record...", "Cancel", 0, 100, self)
-                    progress.setWindowModality(Qt.WindowModal); progress.show()
-                    old_timeout = self.cmd_s.gettimeout()
+                    # Switch popup to Download mode
+                    progress.setLabelText("Downloading Video Record...")
+                    progress.setRange(0, 100); progress.setValue(0)
                     self.cmd_s.settimeout(0.1)
                     try:
                         with open(path, "wb") as f:
@@ -366,8 +387,11 @@ class MediaManager(RemoteBase):
                             QMessageBox.information(self, "Done", "Video downloaded.")
                     finally:
                         self.cmd_s.settimeout(old_timeout); progress.close()
+                else: progress.close()
             else:
+                progress.close()
                 QMessageBox.warning(self, "Info", "No video data recorded or file is empty.")
+            
             self.is_recording = False; self.rec_btn.setText("START RECORDING")
 
 class ControlMenu(QMainWindow):
