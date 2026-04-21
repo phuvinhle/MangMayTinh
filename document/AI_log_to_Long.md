@@ -393,3 +393,30 @@ Việc tách biệt nhấn và thả cho phép người dùng thực hiện các
 
   Giải pháp tối ưu (Deep Scan):
   Chúng ta có thể tạo một luồng chạy ngầm trên Server để quét toàn bộ các thư mục Program Files và Registry, sau đó gửi danh sách tổng hợp về cho Client.
+
+  **53.** "Tôi đã cố gắng nghiên cứu trên YouTube và Google về cách làm tính năng Live Control (điều khiển màn hình từ xa) nhưng thấy kiến thức rất rời rạc và khó áp dụng. Bạn có gợi ý nào về một quy trình chuẩn để xử lý vấn đề này không?"
+
+  ** Đúng là Live Control là tính năng khó nhất vì nó kết hợp giữa truyền tải hình ảnh tốc độ cao và mô phỏng sự kiện hệ thống. Để làm tốt, bạn nên đi theo lộ trình 4 bước này:
+  1. **Chụp ảnh (Capture):** Tuyệt đối không dùng `pyautogui.screenshot()` vì nó rất chậm (1-2 FPS). Hãy dùng thư viện `mss`, nó truy cập trực tiếp vào buffer màn hình nên tốc độ có thể đạt 30-60 FPS.
+  2. **Nén (Compress):** Ảnh chụp ra ở dạng Raw rất nặng. Dùng `OpenCV` nén sang định dạng `.jpg` với chất lượng khoảng 50%. Điều này giúp giảm dung lượng gói tin đi 10-20 lần mà mắt người vẫn nhìn rõ.
+  3. **Truyền tải (Transport):** Sử dụng Socket TCP. Để tránh vỡ ảnh, luôn gửi kèm 4 byte "Header" chứa độ dài của ảnh trước khi gửi dữ liệu ảnh thực tế.
+  4. **Mô phỏng (Simulate):** Tại Server, dùng `pyautogui` để thực thi lệnh. Quan trọng nhất là thuật toán "Mapping" (ánh xạ) tọa độ từ cửa sổ Client sang độ phân giải thực của Server để đảm bảo click chuột chính xác.
+
+  **54.** "Làm cách nào để bắt được toàn bộ các sự kiện từ bàn phím và chuột trong tính năng Live Control?"
+
+  ** Để điều khiển máy tính từ xa một cách chân thực nhất, bạn không thể chỉ bắt sự kiện 'Click' đơn thuần. Bạn cần một cơ chế 'Event Forwarding' toàn diện:
+  - **Chuột:** Bạn phải bắt 3 trạng thái: `mouseDown` (nhấn xuống), `mouseUp` (thả ra) và `mouseMove` (di chuyển). Việc tách biệt nhấn và thả cho phép bạn thực hiện các hành động phức tạp như kéo thả file, bôi đen văn bản hoặc giữ chuột phải để mở menu đặc biệt.
+  - **Bàn phím:** Bạn cần cho phép cửa sổ Live Control nhận "Focus" tuyệt đối (`setFocusPolicy(Qt.StrongFocus)`). Khi đó, mọi phím nhấn từ phím chữ, phím số đến các phím chức năng (F1-F12, Esc, Enter) đều được ghi nhận qua hàm `keyPressEvent`.
+
+  **55.** "Cách xử lý các sự kiện chuột và bàn phím trong Live Control để đảm bảo độ chính xác về tọa độ và các tổ hợp phím phức tạp?"
+
+  ** Đây là hai bài toán kỹ thuật quan trọng nhất trong điều khiển từ xa:
+  - **Tọa độ thực (Mapping):** Bạn phải tính toán tỉ lệ giữa kích thước ảnh đang hiển thị trên Client và độ phân giải thực tế của Server. Khi người dùng click vào điểm (x, y) trên ảnh đã bị co giãn, bạn phải nhân với tỉ lệ `(Server_Width / Display_Width)` để Server thực thi đúng điểm đó.
+  - **Tổ hợp phím (Modifiers):** Khi người dùng nhấn Ctrl+C, PyQt5 sẽ gửi một sự kiện phím 'C' kèm theo một 'Modifier' là Ctrl. Bạn phải đóng gói chúng lại thành một chuỗi (ví dụ: "ctrl+c") và gửi sang Server. Phía Server sẽ sử dụng hàm `pyautogui.hotkey()` hoặc chuỗi lệnh tương ứng để mô phỏng chính xác tổ hợp phím này.
+
+  **56.** "Kiến trúc để tạo ra một tính năng Live Control mượt mà và không gây treo ứng dụng là gì?"
+
+  ** Bạn nên sử dụng mô hình **Producer-Consumer** kết hợp với **Asynchronous Networking**:
+  1. **Producer (Server):** Sử dụng thư viện `mss` để chụp ảnh màn hình liên tục, nén thành JPEG (chất lượng 50-70%) và đẩy vào Socket.
+  2. **Consumer (Client):** Một luồng phụ (`threading.Thread`) sẽ liên tục nhận các gói tin hình ảnh. Sau khi nhận đủ byte, nó dùng `cv2.imdecode` để dựng lại ảnh.
+  3. **UI Thread:** Để tránh 'đơ' giao diện, luồng phụ tuyệt đối không được tự vẽ ảnh. Nó phải dùng `QMetaObject.invokeMethod` để yêu cầu luồng chính cập nhật ảnh lên màn hình. Toàn bộ các lệnh điều khiển chuột/phím sẽ được gửi đi trên một kết nối riêng để không làm gián đoạn luồng hình ảnh đang tải.

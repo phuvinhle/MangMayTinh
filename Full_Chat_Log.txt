@@ -1236,3 +1236,22 @@ ASSISTANT:
 2. Nâng cấp File Explorer: Tích hợp cơ chế Smart Auto-load (Debounce 700ms) cho thanh Path, hỗ trợ nhập tay đường dẫn và đồng bộ hóa tức thì với bảng dữ liệu. Tối ưu giao diện với nút HOME và REFRESH cân đối.
 3. Cải thiện UX: Thêm hộp thoại xác nhận thoát (Exit Confirmation) tại Dashboard để đảm bảo an toàn cho các phiên làm việc và kết nối đang hoạt động.
 4. Hoàn thiện hồ sơ: Biên soạn bộ tài liệu báo cáo dự án (Project Report) và Nhật ký cộng tác AI (AI Log) gồm 50 câu hỏi chuyên sâu chia làm 6 phần chuyên đề trong thư mục document/. Toàn bộ nội dung được viết theo phong cách chuyên gia (Mentor) giúp làm nổi bật tư duy kỹ thuật và quá trình giải quyết vấn đề của sinh viên.
+
+
+---------------------------------------------------------------------------
+SESSION UPDATE: APRIL 21, 2026 - FEATURE ENHANCEMENT & STABILIZATION
+
+USER: Requesting improvements for File Explorer, Server GUI, and Live Control stabilization.
+
+AI (Gemini CLI):
+1. Refactored File Explorer with Auto-load (700ms debounce), HOME/REFRESH buttons, and Drive Listing support.
+2. Built a minimalistic Server GUI showing IP, Password (with Copy buttons), and active Client list.
+3. Fixed Webcam issue where it automatically turned on during screen control.
+4. Implemented Heartbeat mechanism in Dashboard to auto-close sessions when Server disconnects, preventing crashes.
+5. Upgraded Live Control to capture full mouse events (drag, move, down/up) and complex keyboard shortcuts (modifiers like Ctrl/Alt).
+6. Created automated distribution packages (client_package/server_package) with one-click scripts for Windows (.bat) and Linux (.sh), featuring localized 'uv' environments.
+7. Updated AI Log with deep technical details on Live Control architecture.
+
+STATUS: Project stabilized, packaged, and ready for demo video.
+---------------------------------------------------------------------------
+
