@@ -3,6 +3,27 @@ REMOTE PC CONTROL APPLICATION
 [1]. CLIENT (Controller)  
 [2]. SERVER (Controlled)
 
+## 🚀 QUICK START ON NEW MACHINES
+
+To run this application on a new computer without manual setup:
+
+### 1. For the Controller (Client)
+- Go to `client_package/`.
+- Copy your `client/` source folder into this directory.
+- **Windows:** Double-click `run_client_for_win.bat`.
+- **Linux:** Run `bash run_client_for_linux.sh`.
+
+### 2. For the Controlled PC (Server)
+- Go to `server_package/`.
+- Copy your `server/` and `resources/` source folders into this directory.
+- **Windows:** Double-click `run_server_for_win.bat`.
+- **Linux:** Run `bash run_server_for_linux.sh`.
+
+*Note: These scripts will automatically install `uv` (if missing) and set up all required libraries (OpenCV, PyQt5, etc.) in a few seconds.*
+
+---
+
+## 🛠 Features
 - List / Start / Stop applications
 - List / Start / Stop (Kill) processes
 - Take screenshots
