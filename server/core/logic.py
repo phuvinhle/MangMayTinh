@@ -243,15 +243,18 @@ class ControlServer:
         
         with self.client_lock: self.active_clients.append(peer)
         
-        cam = cv2.VideoCapture(0)
+        cam = None
         with mss.mss() as sct:
             try:
                 while self.running:
-                    # ... (rest of image capture logic)
                     if self.stream_mode == "SCREEN":
+                        # If we were in webcam mode before, release it
+                        if cam: cam.release(); cam = None
                         img = np.array(sct.grab(sct.monitors[1]))
                         f = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
                     else:
+                        # Only open cam if needed
+                        if cam is None: cam = cv2.VideoCapture(0)
                         ret, f = cam.read()
                         if not ret:
                             f = np.zeros((480, 640, 3), np.uint8)
@@ -269,7 +272,7 @@ class ControlServer:
                 pass
             finally:
                 conn.close()
-                cam.release()
+                if cam: cam.release()
                 with self.client_lock:
                     try: self.active_clients.remove(peer)
                     except: pass
