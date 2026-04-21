@@ -5,6 +5,7 @@ import struct
 from pathlib import Path
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import QColor
+from PyQt5.QtCore import QTimer, Qt
 from client.core.network import recv_all
 from client.ui.control_menu import ControlMenu
 
@@ -16,22 +17,40 @@ class Dashboard(QWidget):
         self.db_path = Path("resources/data/servers.json")
         self.active_sessions = {}
         layout = QVBoxLayout(self); layout.addWidget(QLabel("<b>ADD NEW SERVER</b>"))
-        
+
         form = QHBoxLayout()
         self.ip_input = QLineEdit("192.168.1.25"); self.ip_input.setPlaceholderText("Server IP")
         self.pwd_input = QLineEdit(); self.pwd_input.setPlaceholderText("Password"); self.pwd_input.setEchoMode(QLineEdit.Password)
         btn_add = QPushButton("ADD & CONNECT"); btn_add.clicked.connect(self.connect_new)
         form.addWidget(self.ip_input); form.addWidget(self.pwd_input); form.addWidget(btn_add)
         layout.addLayout(form)
-        
+
         layout.addWidget(QLabel("<br><b>CONNECTION MANAGER</b>"))
         self.table = QTableWidget(0, 3); self.table.setHorizontalHeaderLabels(["Server IP", "Status", "Actions"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.table)
-        
+
         self.btn_del = QPushButton("REMOVE SELECTED FROM LIST"); self.btn_del.clicked.connect(self.remove_saved)
         layout.addWidget(self.btn_del)
         self.load_db()
+
+        # Simple connection checker
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_active_sessions)
+        self.timer.start(3000)
+
+    def check_active_sessions(self):
+        """Monitor active connections and close them if server goes down."""
+        for ip in list(self.active_sessions.keys()):
+            try:
+                # Probe port 9999
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(1)
+                s.connect((ip, 9999)); s.close()
+            except:
+                self.stop_session(ip)
+                QMessageBox.warning(self, "Disconnected", 
+                                  f"Server {ip} is no longer connected.\nPlease check server status or try reconnecting.")
+                self.update_table()
 
     def load_db(self):
         if self.db_path.exists():
