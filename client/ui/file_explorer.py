@@ -93,6 +93,8 @@ class FileExplorer(RemoteBase, QMainWindow):
                                     f.write(chunk); rem -= len(chunk); progress.setValue(int((sz - rem) * 100 / sz))
                                 except socket.timeout: pass
                                 QApplication.processEvents()
-                        if not progress.wasCanceled(): QMessageBox.information(self, "Done", "Download Completed")
+                        if not progress.wasCanceled(): 
+                            QMessageBox.information(self, "Done", "Download Completed")
+                            from client.core.network import open_file; open_file(lp)
                     finally: self.cmd_s.settimeout(old_timeout); progress.close()
             else: QMessageBox.warning(self, "Error", "File not found or empty.")

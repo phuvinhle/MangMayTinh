@@ -78,7 +78,9 @@ class MediaManager(RemoteBase, QMainWindow):
                                     f.write(chunk); rem -= len(chunk); progress.setValue(int((sz - rem) * 100 / sz))
                                 except Exception: pass
                                 QApplication.processEvents()
-                        if not progress.wasCanceled(): QMessageBox.information(self, "Done", "Video downloaded.")
+                        if not progress.wasCanceled(): 
+                            QMessageBox.information(self, "Done", "Video downloaded.")
+                            from client.core.network import open_file; open_file(path)
                     finally: self.cmd_s.settimeout(old_timeout); progress.close()
                 else: progress.close()
             else: progress.close(); QMessageBox.warning(self, "Info", "No video data recorded or file is empty.")
