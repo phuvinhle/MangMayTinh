@@ -31,7 +31,13 @@ class MouseCommand(BaseCommand):
 @CommandRegistry.register("KEY")
 class KeyCommand(BaseCommand):
     def execute(self, server, conn, data):
-        pyautogui.press(data['key'])
+        key = data['key']
+        if "+" in key:
+            # Handle combinations like "ctrl+c"
+            parts = key.split("+")
+            pyautogui.hotkey(*parts)
+        else:
+            pyautogui.press(key)
 
 
 @CommandRegistry.register("LIST_PROCS")
