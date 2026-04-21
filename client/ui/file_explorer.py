@@ -40,14 +40,17 @@ class FileExplorer(RemoteBase, QMainWindow):
         
         self.full_data = [] # Cache for local filtering
         self.path_timer = QTimer(); self.path_timer.setSingleShot(True); self.path_timer.timeout.connect(self.load)
-        QTimer.singleShot(100, self.load)
+        
+        # Initial load (Home/Drives)
+        QTimer.singleShot(100, self.go_home)
 
     def start_path_timer(self):
         """Auto-load after typing with 700ms debounce."""
         self.path_timer.stop(); self.path_timer.start(700)
 
     def go_home(self):
-        self.path.setText("/"); self.load()
+        """Request drive list from server."""
+        self.path.setText(""); self.load()
 
     def format_size(self, size):
         """Convert bytes to human-readable format."""
@@ -62,14 +65,14 @@ class FileExplorer(RemoteBase, QMainWindow):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         
-        # Always add the ".." back-navigation entry if not at root
+        # Only add ".." if we are currently in a valid path
         curr_text = self.path.text()
-        if curr_text and curr_text != "/" and curr_text != "\\":
+        if curr_text:
             try:
                 curr_path = Path(curr_text)
-                if curr_path != curr_path.parent:
-                    r = self.table.rowCount(); self.table.insertRow(r)
-                    self.table.setItem(r, 0, QTableWidgetItem("..")); self.table.setItem(r, 1, QTableWidgetItem("Folder"))
+                # Show ".." if we have a parent OR if we are at root of a drive (to go back to DRIVES list)
+                r = self.table.rowCount(); self.table.insertRow(r)
+                self.table.setItem(r, 0, QTableWidgetItem("..")); self.table.setItem(r, 1, QTableWidgetItem("Folder"))
             except: pass
 
         txt = self.search.text().lower()
@@ -85,7 +88,8 @@ class FileExplorer(RemoteBase, QMainWindow):
 
     def load(self):
         self.path_timer.stop() # Stop timer if manual load is called
-        self.send_safe_cmd({"type": "LIST_FILES", "path": self.path.text()})
+        p = self.path.text()
+        self.send_safe_cmd({"type": "LIST_FILES", "path": p})
         data = self.recv_json()
         if data is not None:
             self.full_data = data
@@ -94,14 +98,24 @@ class FileExplorer(RemoteBase, QMainWindow):
     def dive(self, item):
         name = self.table.item(item.row(), 0).text()
         curr_text = self.path.text()
+        
         try:
-            curr_path = Path(curr_text)
-            if name == "..": 
+            if not curr_text: # From drives list
+                self.path.setText(name)
+            elif name == "..": 
+                curr_path = Path(curr_text)
                 new_path = curr_path.parent
-                if new_path == curr_path: return 
-                self.path.setText(str(new_path))
+                if new_path == curr_path: # Already at a root (C:\ or /)
+                    self.path.setText("") # Go back to DRIVES list
+                else:
+                    self.path.setText(str(new_path))
             else: 
-                self.path.setText(str(curr_path / name))
+                curr_path = Path(curr_text)
+                # Ensure correct path joining for roots like C:\
+                if curr_text.endswith("\\") or curr_text.endswith("/"):
+                    self.path.setText(curr_text + name)
+                else:
+                    self.path.setText(str(curr_path / name))
             self.load()
         except: pass
 

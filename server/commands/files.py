@@ -1,5 +1,6 @@
 import struct
 import zipfile
+import psutil
 from pathlib import Path
 
 from server.core.registry import CommandRegistry, BaseCommand
@@ -8,20 +9,33 @@ from server.core.registry import CommandRegistry, BaseCommand
 @CommandRegistry.register("LIST_FILES")
 class ListFilesCommand(BaseCommand):
     def execute(self, server, conn, data):
-        p = Path(data['path'])
+        path_str = data.get('path', '').strip()
         files = []
-        if p.exists() and p.is_dir():
-            for item in p.iterdir():
+        
+        # If path is empty or "DRIVES", list all root partitions (C:\, D:\, etc.)
+        if not path_str or path_str == "DRIVES":
+            for part in psutil.disk_partitions(all=False):
                 try:
                     files.append({
-                        "name": item.name,
-                        "is_dir": item.is_dir(),
-                        "size": (
-                            item.stat().st_size if not item.is_dir() else 0
-                        ),
+                        "name": part.mountpoint,
+                        "is_dir": True,
+                        "size": 0,
                     })
-                except Exception:
-                    continue
+                except: continue
+        else:
+            p = Path(path_str)
+            if p.exists() and p.is_dir():
+                for item in p.iterdir():
+                    try:
+                        files.append({
+                            "name": item.name,
+                            "is_dir": item.is_dir(),
+                            "size": (
+                                item.stat().st_size if not item.is_dir() else 0
+                            ),
+                        })
+                    except Exception:
+                        continue
         server.send_json(conn, files)
 
 
