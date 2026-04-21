@@ -37,6 +37,8 @@ class ControlServer:
         self.recorder = None
         self.activity_logs = []
         self.last_window = ""
+        self.active_clients = []
+        self.client_lock = threading.Lock()
 
         # Paths
         self.cert_dir = Path("resources/certs")
@@ -235,10 +237,17 @@ class ControlServer:
                 logging.info("Recording worker stopped.")
 
     def handle_stream(self, conn):
+        peer = "Unknown"
+        try: peer = conn.getpeername()[0]
+        except: pass
+        
+        with self.client_lock: self.active_clients.append(peer)
+        
         cam = cv2.VideoCapture(0)
         with mss.mss() as sct:
             try:
                 while self.running:
+                    # ... (rest of image capture logic)
                     if self.stream_mode == "SCREEN":
                         img = np.array(sct.grab(sct.monitors[1]))
                         f = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
@@ -261,6 +270,9 @@ class ControlServer:
             finally:
                 conn.close()
                 cam.release()
+                with self.client_lock:
+                    try: self.active_clients.remove(peer)
+                    except: pass
 
     def command_loop(self):
         raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -281,6 +293,10 @@ class ControlServer:
                 logging.error(f"Command Error: {e}")
 
     def handle_command(self, conn):
+        peer = "Unknown"
+        try: peer = conn.getpeername()[0]
+        except: pass
+
         try:
             pwd = conn.recv(1024).decode()
             if pwd != self.password:
@@ -290,6 +306,9 @@ class ControlServer:
                 conn.sendall(struct.pack("!I", len(res)) + res)
                 conn.close()
                 return
+
+            # Auth success - register client
+            with self.client_lock: self.active_clients.append(peer)
 
             res = json.dumps({
                 "status": "OK",
@@ -322,6 +341,9 @@ class ControlServer:
             pass
         finally:
             conn.close()
+            with self.client_lock:
+                try: self.active_clients.remove(peer)
+                except: pass
 
     def send_json(self, conn, data):
         p = json.dumps(data).encode('utf-8')

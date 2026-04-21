@@ -10,15 +10,25 @@ if str(root_dir) not in sys.path:
 
 import server.commands  # noqa: E402 – registers all commands
 from server.core.logic import ControlServer  # noqa: E402
-
+from server.ui.server_window import ServerWindow # noqa: E402
+from PyQt5.QtWidgets import QApplication
 
 if __name__ == "__main__":
-    server = ControlServer()
-    threading.Thread(target=server.stream_loop, daemon=True).start()
-    threading.Thread(target=server.command_loop, daemon=True).start()
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        server.stop()
-        sys.exit(0)
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+
+    # Start logic
+    srv = ControlServer()
+    
+    # Run loops in threads
+    t1 = threading.Thread(target=srv.stream_loop, daemon=True)
+    t2 = threading.Thread(target=srv.command_loop, daemon=True)
+    t1.start()
+    t2.start()
+
+    # Create GUI
+    window = ServerWindow(srv)
+    window.show()
+
+    # Main thread runs GUI
+    sys.exit(app.exec_())
