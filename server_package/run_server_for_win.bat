@@ -1,12 +1,21 @@
 @echo off
-echo [INFO] Checking for uv...
-where uv >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] 'uv' is not installed. 
-    echo [INFO] Installing 'uv' via PowerShell...
+setlocal
+cd /d %~dp0
+
+echo [INFO] Setting up local environment...
+set "UV_CACHE_DIR=.uv_cache"
+set "UV_PYTHON_INSTALL_DIR=.python"
+
+:: 1. Download UV standalone if not exists
+if not exist "uv.exe" (
+    echo [INFO] Downloading standalone 'uv' binary...
     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-    set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+    copy "%USERPROFILE%\.cargo\bin\uv.exe" "uv.exe" >nul
 )
-echo [INFO] Starting Server via uv...
-uv run python server/main.py
+
+:: 2. Run application
+echo [INFO] Starting Server...
+.\uv.exe run --python 3.12 python server/main.py
+
+echo [INFO] Done. Delete this folder to remove all cache and environments.
 pause
