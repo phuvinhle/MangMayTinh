@@ -17,6 +17,10 @@ To run this application on a new computer (no manual setup required, code is pre
 - **Windows:** Double-click `run_server_for_win.bat`.
 - **Linux:** Run `bash run_server_for_linux.sh`.
 
+> **Note for Linux users:** 
+> - You might need to install system dependencies: `sudo apt install python3-dev libevdev-dev`.
+> - For keylogging/mouse control, add your user to the input group: `sudo usermod -a -G input $USER` then restart your session.
+
 *Note: These scripts will automatically install `uv` (if missing) and set up all required libraries (OpenCV, PyQt5, etc.) in a few seconds.*
 
 ---
