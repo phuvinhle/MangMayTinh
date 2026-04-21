@@ -14,7 +14,18 @@ from server.core.registry import CommandRegistry, BaseCommand
 @CommandRegistry.register("MOUSE")
 class MouseCommand(BaseCommand):
     def execute(self, server, conn, data):
-        pyautogui.click(data['x'], data['y'], button=data.get('btn', 'left'))
+        action = data.get('action', 'click')
+        x, y = data['x'], data['y']
+        btn = data.get('btn', 'left')
+        
+        if action == 'click':
+            pyautogui.click(x, y, button=btn)
+        elif action == 'down':
+            pyautogui.mouseDown(x, y, button=btn)
+        elif action == 'up':
+            pyautogui.mouseUp(x, y, button=btn)
+        elif action == 'move':
+            pyautogui.moveTo(x, y)
 
 
 @CommandRegistry.register("KEY")
