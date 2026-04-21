@@ -18,9 +18,12 @@ class SystemApps(RemoteBase, QMainWindow):
 
         search_layout.addWidget(self.search); search_layout.addWidget(self.btn_refresh)
         layout.addLayout(search_layout)
-        self.table = QTableWidget(0, 2); self.table.setHorizontalHeaderLabels(["Name", "Type"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table = QTableWidget(0, 2); self.table.setHorizontalHeaderLabels(["Name", "Path"])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)          # Name
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents) # Path
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSortingEnabled(True)
+
         layout.addWidget(self.table)
 
         btns = QHBoxLayout()
@@ -52,7 +55,7 @@ class SystemApps(RemoteBase, QMainWindow):
             if not search_txt or search_txt in app['name'].lower():
                 r = self.table.rowCount(); self.table.insertRow(r)
                 self.table.setItem(r, 0, QTableWidgetItem(app['name']))
-                self.table.setItem(r, 1, QTableWidgetItem(app.get('type', 'App')))
+                self.table.setItem(r, 1, QTableWidgetItem(app['exec']))
                 self.table.item(r, 0).setData(Qt.UserRole, app['exec'])
         self.table.setSortingEnabled(True)
 

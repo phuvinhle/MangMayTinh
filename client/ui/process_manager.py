@@ -21,9 +21,14 @@ class ProcessManager(RemoteBase, QMainWindow):
         search_layout.addWidget(self.search); search_layout.addWidget(self.btn_refresh)
         layout.addLayout(search_layout)
 
-        self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["PID", "Name", "CPU", "MEM"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["PID", "Name", "CPU %", "RAM %"])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents) # PID
+        header.setSectionResizeMode(1, QHeaderView.Stretch)          # Name
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents) # CPU
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents) # RAM
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSortingEnabled(True)
+
         layout.addWidget(self.table)
 
         btns = QHBoxLayout()

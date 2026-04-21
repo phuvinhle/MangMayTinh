@@ -29,7 +29,10 @@ class FileExplorer(RemoteBase, QMainWindow):
         layout.addLayout(search_layout)
 
         self.table = QTableWidget(0, 3); self.table.setHorizontalHeaderLabels(["Name", "Type", "Size"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)          # Name
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents) # Type
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents) # Size
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSortingEnabled(True)
         self.table.itemDoubleClicked.connect(self.dive); layout.addWidget(self.table)
         
@@ -45,6 +48,14 @@ class FileExplorer(RemoteBase, QMainWindow):
 
     def go_home(self):
         self.path.setText("/"); self.load()
+
+    def format_size(self, size):
+        """Convert bytes to human-readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024.0:
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} PB"
 
     def local_filter(self):
         """Filter current directory listing instantly."""
@@ -67,7 +78,9 @@ class FileExplorer(RemoteBase, QMainWindow):
                 r = self.table.rowCount(); self.table.insertRow(r)
                 self.table.setItem(r, 0, QTableWidgetItem(f['name']))
                 self.table.setItem(r, 1, QTableWidgetItem("Folder" if f['is_dir'] else "File"))
-                self.table.setItem(r, 2, QTableWidgetItem(str(f['size'])))
+                # Format size for files, leave empty or '-' for folders
+                size_str = self.format_size(f['size']) if not f['is_dir'] else "-"
+                self.table.setItem(r, 2, QTableWidgetItem(size_str))
         self.table.setSortingEnabled(True)
 
     def load(self):
