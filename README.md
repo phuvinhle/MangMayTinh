@@ -5,17 +5,15 @@ REMOTE PC CONTROL APPLICATION
 
 ## 🚀 QUICK START ON NEW MACHINES
 
-To run this application on a new computer without manual setup:
+To run this application on a new computer (no manual setup required, code is pre-packaged):
 
 ### 1. For the Controller (Client)
 - Go to `client_package/`.
-- Copy your `client/` source folder into this directory.
 - **Windows:** Double-click `run_client_for_win.bat`.
 - **Linux:** Run `bash run_client_for_linux.sh`.
 
 ### 2. For the Controlled PC (Server)
 - Go to `server_package/`.
-- Copy your `server/` and `resources/` source folders into this directory.
 - **Windows:** Double-click `run_server_for_win.bat`.
 - **Linux:** Run `bash run_server_for_linux.sh`.
 
