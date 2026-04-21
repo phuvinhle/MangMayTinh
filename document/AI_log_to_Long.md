@@ -371,3 +371,25 @@ Việc tách biệt nhấn và thả cho phép người dùng thực hiện các
 2. Bạn hiển thị một hộp thoại xác nhận: 'Bạn có chắc chắn muốn thoát và ngắt toàn bộ kết nối?'.
 3. Nếu người dùng đồng ý, bạn duyệt qua danh sách `active_sessions` (lưu trữ các socket và cửa sổ con) để gọi hàm `.close()` cho từng cái.
 4. Cuối cùng, gọi `QApplication.quit()` để giải phóng toàn bộ tài nguyên. Việc này đảm bảo không có bất kỳ luồng ma (zombie threads) nào còn chạy sót lại trong Task Manager của máy tính.
+
+**52.** tôi có một vấn đề tò mò, như bạn biết 1 máy tính có thể có nhiều ổ đĩa, làm cách nào để tôi có thể scan hết ứng dụng và file                                                                                                                                                                                                                                              
+
+✦ Tôi sẽ giải thích cách chúng ta có thể mở rộng ứng dụng để quét toàn bộ các ổ đĩa và ứng dụng trên máy tính. Hiện tại, ứng dụng của chúng ta đang hoạt động theo cách tiếp cận "từng phần", nhưng để quét toàn bộ, chúng ta cần thay đổi chiến thuật:
+
+  1. Cách quét toàn bộ Ổ đĩa (Drives)
+  Trên Windows, các ổ đĩa được định danh bằng chữ cái (C:, D:, E:...). Trên Linux, mọi thứ đều nằm dưới gốc / nhưng các ổ đĩa khác thường được "gắn" (mount) vào /media hoặc /mnt.
+
+  Giải pháp: Chúng ta có thể dùng thư viện psutil để liệt kê tất cả các phân vùng đang hoạt động:
+
+   1 import psutil
+   2 drives = [part.mountpoint for part in psutil.disk_partitions()]
+   3 # Kết quả sẽ là: ['C:\\', 'D:\\'] trên Windows hoặc ['/', '/media/data'] trên Linux
+  Trong File Explorer, thay vì mặc định vào /, chúng ta có thể thêm một nút "Computer" để hiển thị danh sách các ổ đĩa này làm điểm bắt đầu.
+
+  2. Cách quét toàn bộ Ứng dụng (System Apps)
+  Việc quét ứng dụng khó hơn vì chúng không nằm ở một chỗ duy nhất.
+   * Trên Windows: Ứng dụng thường nằm trong C:\Program Files, C:\Program Files (x86), hoặc trong thư mục AppData của người dùng. Ngoài ra, danh sách cài đặt chính xác nhất nằm trong Registry của Windows.
+   * Trên Linux: Chúng ta quét các file .desktop trong /usr/share/applications và ~/.local/share/applications.
+
+  Giải pháp tối ưu (Deep Scan):
+  Chúng ta có thể tạo một luồng chạy ngầm trên Server để quét toàn bộ các thư mục Program Files và Registry, sau đó gửi danh sách tổng hợp về cho Client.
