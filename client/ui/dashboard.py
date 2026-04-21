@@ -59,9 +59,8 @@ class Dashboard(QWidget):
             
             btn_box = QWidget(); btn_layout = QHBoxLayout(btn_box); btn_layout.setContentsMargins(2, 2, 2, 2)
             if is_active:
-                b_open = QPushButton("OPEN"); b_open.clicked.connect(lambda _, i=ip: self.active_sessions[i].show())
                 b_stop = QPushButton("STOP"); b_stop.setStyleSheet("color: red;"); b_stop.clicked.connect(lambda _, i=ip: self.stop_session(i))
-                btn_layout.addWidget(b_open); btn_layout.addWidget(b_stop)
+                btn_layout.addWidget(b_stop)
             else:
                 b_conn = QPushButton("CONNECT"); b_conn.clicked.connect(lambda _, i=ip, p=pwd: self.connect_saved(i, p))
                 btn_layout.addWidget(b_conn)
