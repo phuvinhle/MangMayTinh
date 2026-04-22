@@ -7,15 +7,29 @@ class SystemApps(RemoteBase, QMainWindow):
         super().__init__(ip, pwd, controller)
         self.setWindowTitle(f"Apps - {ip}"); self.resize(500, 500)
         wid = QWidget(); self.setCentralWidget(wid); layout = QVBoxLayout(wid)
-        self.search = QLineEdit(); self.search.setPlaceholderText("Search applications..."); self.search.textChanged.connect(self.filter_list)
-        layout.addWidget(self.search)
+        
+        # Search and Refresh layout
+        top_layout = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search applications...")
+        self.search.textChanged.connect(self.filter_list)
+        top_layout.addWidget(self.search)
+        
+        self.btn_ref = QPushButton("REFRESH")
+        self.btn_ref.setFixedWidth(80)
+        self.btn_ref.clicked.connect(self.load_apps)
+        top_layout.addWidget(self.btn_ref)
+        layout.addLayout(top_layout)
+
         self.table = QTableWidget(0, 1); self.table.setHorizontalHeaderLabels(["Application Name"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows); layout.addWidget(self.table)
-        btn_layout = QHBoxLayout()
-        self.btn_ref = QPushButton("REFRESH"); self.btn_ref.clicked.connect(self.load_apps)
-        self.btn_start = QPushButton("START APPLICATION"); self.btn_start.clicked.connect(self.start_app)
-        btn_layout.addWidget(self.btn_ref); btn_layout.addWidget(self.btn_start); layout.addLayout(btn_layout)
+        
+        self.btn_start = QPushButton("START APPLICATION")
+        self.btn_start.setFixedHeight(40)
+        self.btn_start.clicked.connect(self.start_app)
+        layout.addWidget(self.btn_start)
+        
         self.full_apps = []
         self.load_apps()
 

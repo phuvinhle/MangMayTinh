@@ -81,3 +81,15 @@ class RemoteBase:
         except Exception as e:
             logging.error(f"Receive Error: {e}")
             self.handle_disconnect(); return None
+
+    def closeEvent(self, ev):
+        try:
+            if self.cmd_s:
+                self.cmd_s.shutdown(socket.SHUT_RDWR)
+                self.cmd_s.close()
+                self.cmd_s = None
+        except: pass
+        if hasattr(super(), 'closeEvent'): super().closeEvent(ev)
+
+    def close_all_session(self):
+        self.close()

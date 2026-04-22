@@ -31,14 +31,21 @@ class ControlMenu(RemoteBase, QMainWindow):
     def open_files(self): w = FileExplorer(self.ip, self.pwd, self); w.show(); self.child_windows.append(w)
     def open_logs(self): w = ActivityLogs(self.ip, self.pwd, self); w.show(); self.child_windows.append(w)
     def open_media(self): w = MediaManager(self.ip, self.pwd, self); w.show(); self.child_windows.append(w)
+    
     def close_all_session(self):
-        for w in self.child_windows:
-            try: w.close()
+        # 1. Close all child windows explicitly
+        for w in list(self.child_windows):
+            try:
+                w.close()
+                self.child_windows.remove(w)
             except: pass
+        # 2. Finally close this menu
         self.close()
+
     def closeEvent(self, ev):
-        self.close_all_session()
+        # Notify the dashboard that this session is ending
         if self.on_close_callback: self.on_close_callback(self.ip)
+        # Standard base cleanup handles cmd_s
         super().closeEvent(ev)
     def open_power(self):
         m = QMessageBox(self); m.setWindowTitle("Power Options"); m.setText(f"Choose an action for server {self.ip}")
