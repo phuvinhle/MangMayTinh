@@ -5,7 +5,6 @@ from PyQt5.QtCore import Qt
 from client.core.base import RemoteBase
 from client.core.network import recv_all
 
-
 class MediaManager(RemoteBase, QMainWindow):
     def __init__(self, ip, pwd, controller=None):
         super().__init__(ip, pwd, controller)
@@ -37,11 +36,18 @@ class MediaManager(RemoteBase, QMainWindow):
                                     chunk = self.cmd_s.recv(min(rem, 131072))
                                     if not chunk: break
                                     f.write(chunk); rem -= len(chunk); progress.setValue(int((sz - rem) * 100 / sz))
-                                except Exception: pass
+                                except: pass
                                 QApplication.processEvents()
-                        if not progress.wasCanceled(): QMessageBox.information(self, "Done", f"{mode} captured and saved.")
+                        if not progress.wasCanceled(): 
+                            progress.close()
+                            # Auto-closing loading indicator
+                            load = QProgressDialog("Opening file...", None, 0, 0, self)
+                            load.setWindowTitle("Please Wait")
+                            load.setWindowModality(Qt.WindowModal); load.show(); QApplication.processEvents()
+                            from client.core.network import open_file; open_file(path)
+                            load.close()
                     finally: self.cmd_s.settimeout(old_timeout); progress.close()
-            else: QMessageBox.warning(self, "Error", "Failed to capture. Check if webcam is available.")
+            else: QMessageBox.warning(self, "Error", "Failed to capture.")
 
     def toggle_record(self):
         if not self.is_recording:
@@ -49,7 +55,7 @@ class MediaManager(RemoteBase, QMainWindow):
         else:
             self.send_safe_cmd({"type": "REC_STOP"})
             progress = QProgressDialog("Server is finalizing video file...", "Cancel", 0, 0, self)
-            progress.setWindowTitle("Processing"); progress.setWindowModality(Qt.ApplicationModal); progress.setRange(0, 0); progress.show(); QApplication.processEvents()
+            progress.setRange(0, 0); progress.show(); QApplication.processEvents()
             old_timeout = self.cmd_s.gettimeout(); self.cmd_s.settimeout(0.1); h = b""
             try:
                 while len(h) < 8:
@@ -58,7 +64,7 @@ class MediaManager(RemoteBase, QMainWindow):
                         chunk = self.cmd_s.recv(8 - len(h))
                         if not chunk: break
                         h += chunk
-                    except Exception: pass
+                    except: pass
                     QApplication.processEvents()
             finally: self.cmd_s.settimeout(old_timeout)
             if progress.wasCanceled() or len(h) < 8: progress.close(); self.is_recording = False; self.rec_btn.setText("START RECORDING"); return
@@ -66,7 +72,7 @@ class MediaManager(RemoteBase, QMainWindow):
             if sz > 0:
                 path, _ = QFileDialog.getSaveFileName(self, "Save Video", f"record_{int(time.time())}.mp4", "*.mp4")
                 if path:
-                    progress.setLabelText("Downloading Video Record..."); progress.setRange(0, 100); progress.setValue(0); self.cmd_s.settimeout(0.1)
+                    progress.setLabelText("Downloading Video..."); progress.setRange(0, 100); progress.setValue(0)
                     try:
                         with open(path, "wb") as f:
                             rem = sz
@@ -76,12 +82,16 @@ class MediaManager(RemoteBase, QMainWindow):
                                     chunk = self.cmd_s.recv(min(rem, 131072))
                                     if not chunk: break
                                     f.write(chunk); rem -= len(chunk); progress.setValue(int((sz - rem) * 100 / sz))
-                                except Exception: pass
+                                except: pass
                                 QApplication.processEvents()
                         if not progress.wasCanceled(): 
-                            QMessageBox.information(self, "Done", "Video downloaded.")
+                            progress.close()
+                            # Auto-closing loading indicator
+                            load = QProgressDialog("Opening video...", None, 0, 0, self)
+                            load.setWindowModality(Qt.WindowModal); load.show(); QApplication.processEvents()
                             from client.core.network import open_file; open_file(path)
+                            load.close()
                     finally: self.cmd_s.settimeout(old_timeout); progress.close()
                 else: progress.close()
-            else: progress.close(); QMessageBox.warning(self, "Info", "No video data recorded or file is empty.")
+            else: progress.close(); QMessageBox.warning(self, "Info", "No video data recorded.")
             self.is_recording = False; self.rec_btn.setText("START RECORDING")

@@ -44,22 +44,18 @@ class KeyCommand(BaseCommand):
 class ListProcsCommand(BaseCommand):
     def execute(self, server, conn, data):
         procs = []
-        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent', 'cmdline']
+        cpu_count = psutil.cpu_count() or 1
+        attrs = ['pid', 'name', 'cpu_percent', 'memory_percent']
         for p in psutil.process_iter(attrs):
             try:
                 info = p.info
-                name = (
-                    " ".join(info['cmdline'])
-                    if info['cmdline']
-                    else info['name']
-                )
-                if len(name) > 120:
-                    name = name[:117] + "..."
+                # Normalize CPU % to total system capacity (0-100%)
+                norm_cpu = round(info['cpu_percent'] / cpu_count, 1)
                 procs.append({
                     "pid": info['pid'],
-                    "name": name,
-                    "cpu_percent": info['cpu_percent'],
-                    "memory_percent": info['memory_percent'],
+                    "name": info['name'],
+                    "cpu_percent": norm_cpu,
+                    "memory_percent": round(info['memory_percent'], 1),
                 })
             except Exception:
                 continue
