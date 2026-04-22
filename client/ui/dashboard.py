@@ -126,7 +126,7 @@ class Dashboard(QMainWindow):
             self.table.setItem(r, 0, ip_item)
             
             is_active = ip in self.active_sessions
-            status_item = QTableWidgetItem("CONNECTED" if is_active else "OFFLINE")
+            status_item = QTableWidgetItem("CONNECTED" if is_active else "DISCONNECTED")
             status_item.setForeground(QColor("#27ae60" if is_active else "#e74c3c"))
             status_item.setFont(QFont("Arial", 9, QFont.Bold))
             status_item.setTextAlignment(Qt.AlignCenter)

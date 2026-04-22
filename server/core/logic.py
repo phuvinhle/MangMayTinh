@@ -132,7 +132,9 @@ class ControlServer:
         self.running = False
         with self.client_lock:
             for c in self.active_clients_data:
-                try: c['conn'].close()
+                try: 
+                    c['conn'].shutdown(socket.SHUT_RDWR)
+                    c['conn'].close()
                 except: pass
             self.active_clients_data.clear()
         if self.recorder: self.recorder.release()
@@ -153,9 +155,7 @@ class ControlServer:
 
     def _record_worker(self):
         cam = None
-        if self.stream_mode == "WEBCAM":
-            cam = cv2.VideoCapture(0)
-        
+        if self.stream_mode == "WEBCAM": cam = cv2.VideoCapture(0)
         with mss.mss() as sct:
             try:
                 while self.running and self.is_recording:
@@ -165,11 +165,10 @@ class ControlServer:
                         if cam is None: cam = cv2.VideoCapture(0)
                         ret, f = cam.read()
                         if not ret: f = np.zeros((480, 640, 3), np.uint8)
-                    
                     if self.recorder is None:
                         h, w = f.shape[:2]; self.recorder = cv2.VideoWriter("temp_rec.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
                     if self.recorder: self.recorder.write(f)
-                    time.sleep(0.1) # Match 10 FPS exactly
+                    time.sleep(0.1)
             except Exception: pass
             finally:
                 if self.recorder: self.recorder.release(); self.recorder = None
@@ -212,7 +211,10 @@ class ControlServer:
 
     def handle_command(self, conn):
         peer = "Unknown"; client_entry = None
-        try: peer = conn.getpeername()[0]
+        try: 
+            peer = conn.getpeername()[0]
+            # Set a shorter keepalive/timeout for better disconnection sensing
+            conn.settimeout(10.0)
         except: pass
 
         try:
@@ -230,20 +232,25 @@ class ControlServer:
             res = json.dumps({"status": "OK", "w": self.native_res[0], "h": self.native_res[1]}).encode()
             conn.sendall(struct.pack("!I", len(res)) + res)
 
+            # Continuous command loop
             while self.running:
-                h = conn.recv(4)
-                if not h: break
-                sz = struct.unpack("!I", h)[0]; req = b""
-                while len(req) < sz:
-                    ch = conn.recv(min(sz - len(req), 8192))
-                    if not ch: break
-                    req += ch
-                if not req: break
-                data = json.loads(req.decode())
-                command = CommandRegistry.get(data['type'])
-                if command: command.execute(self, conn, data)
+                try:
+                    h = conn.recv(4)
+                    if not h: break # Client closed normally
+                    sz = struct.unpack("!I", h)[0]; req = b""
+                    while len(req) < sz:
+                        ch = conn.recv(min(sz - len(req), 8192))
+                        if not ch: break
+                        req += ch
+                    if not req: break
+                    data = json.loads(req.decode())
+                    command = CommandRegistry.get(data['type'])
+                    if command: command.execute(self, conn, data)
+                except socket.timeout: continue # Just loop back for responsiveness
+                except Exception: break # Network error or closed
         except Exception: pass
         finally:
+            # FORCE REMOVAL from active clients list
             with self.client_lock:
                 if client_entry in self.active_clients_data:
                     self.active_clients_data.remove(client_entry)
