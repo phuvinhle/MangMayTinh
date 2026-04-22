@@ -15,6 +15,7 @@ class ServerWindow(QMainWindow):
         self.setWindowTitle("Control Server - Status")
         self.setFixedSize(550, 680)
         
+        # Persistence path
         self.history_path = Path("resources/data/server_history.json")
         self.history_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -34,6 +35,8 @@ class ServerWindow(QMainWindow):
         info_group = QGroupBox("Server Access Info")
         info_layout = QGridLayout()
         info_layout.setContentsMargins(15, 15, 15, 15)
+        info_layout.setSpacing(10)
+        
         # IP Field
         info_layout.addWidget(QLabel("IP Address:"), 0, 0)
         self.ip_val = QLineEdit(self.server.get_local_ip())
@@ -63,7 +66,7 @@ class ServerWindow(QMainWindow):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
-        # Connection History Header - Fixed Layout
+        # Connection History Header
         h_layout = QHBoxLayout()
         h_layout.addWidget(QLabel("<b>Connection History:</b>"), 0, Qt.AlignVCenter)
         h_layout.addStretch()
@@ -110,25 +113,42 @@ class ServerWindow(QMainWindow):
         footer_layout.addWidget(self.btn_toggle)
         layout.addLayout(footer_layout)
 
-        self.history_data = []
+        # Persistence and tracking
+        self.history_data = [] 
         self.load_history()
-        self.timer = QTimer(); self.timer.timeout.connect(self.update_ui); self.timer.start(1000)
+        
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_ui)
+        self.timer.start(1000)
 
     def load_history(self):
         if self.history_path.exists():
             try:
-                with open(self.history_path, 'r') as f: self.history_data = json.load(f)
+                with open(self.history_path, 'r') as f:
+                    self.history_data = json.load(f)
                 self.refresh_table_from_data()
             except: pass
 
     def save_history(self):
         try:
-            with open(self.history_path, 'w') as f: json.dump(self.history_data, f)
+            with open(self.history_path, 'w') as f:
+                json.dump(self.history_data, f)
         except: pass
 
     def clear_history(self):
-        if QMessageBox.question(self, "Confirm", "Delete all connection history?") == QMessageBox.Yes:
-            self.history_data = []; self.table.setRowCount(0); self.save_history()
+        if QMessageBox.question(self, "Confirm", "Delete all connection history and physical log files?") == QMessageBox.Yes:
+            # 1. Clear physical log files
+            try:
+                for log_file in self.server.log_dir.glob("*.txt"):
+                    try: log_file.unlink()
+                    except: pass
+            except: pass
+            
+            # 2. Clear UI data and persistence
+            self.history_data = []
+            self.table.setRowCount(0)
+            self.save_history()
+            QMessageBox.information(self, "Success", "History and log files have been cleared.")
 
     def open_log_file(self, path):
         try:
@@ -159,18 +179,28 @@ class ServerWindow(QMainWindow):
 
     def refresh_table_from_data(self):
         display_map = {}
-        for entry in self.history_data: display_map[entry['ip']] = entry
+        for entry in self.history_data:
+            display_map[entry['ip']] = entry
+            
         self.table.setRowCount(0)
         sorted_entries = sorted(display_map.values(), key=lambda x: x['time'], reverse=True)
         active_ips = self.server.active_clients
+
         for item in sorted_entries:
             row = self.table.rowCount(); self.table.insertRow(row)
-            t_item = QTableWidgetItem(item['time']); t_item.setTextAlignment(Qt.AlignCenter); self.table.setItem(row, 0, t_item)
-            ip_val = item['ip']; ip_item = QTableWidgetItem(ip_val); ip_item.setTextAlignment(Qt.AlignCenter); self.table.setItem(row, 1, ip_item)
-            is_active = ip_val in active_ips
+            
+            t_item = QTableWidgetItem(item['time']); t_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 0, t_item)
+            
+            ip_item = QTableWidgetItem(item['ip']); ip_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 1, ip_item)
+            
+            is_active = item['ip'] in active_ips
             s_item = QTableWidgetItem("CONNECTED" if is_active else "DISCONNECTED")
             s_item.setForeground(QColor("#27ae60" if is_active else "#e74c3c"))
-            s_item.setFont(QFont("Arial", 9, QFont.Bold)); s_item.setTextAlignment(Qt.AlignCenter); self.table.setItem(row, 2, s_item)
+            s_item.setFont(QFont("Arial", 9, QFont.Bold)); s_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 2, s_item)
+            
             lp = item.get('log_path')
             if lp and os.path.exists(lp):
                 btn_box = QWidget(); btn_layout = QHBoxLayout(btn_box); btn_layout.setContentsMargins(5, 2, 5, 2); btn_layout.setAlignment(Qt.AlignCenter)
@@ -179,15 +209,23 @@ class ServerWindow(QMainWindow):
                 btn_log.clicked.connect(lambda _, p=lp: self.open_log_file(p))
                 btn_layout.addWidget(btn_log); self.table.setCellWidget(row, 3, btn_box)
             else:
-                e_item = QTableWidgetItem("-"); e_item.setTextAlignment(Qt.AlignCenter); self.table.setItem(row, 3, e_item)
+                e_item = QTableWidgetItem("-"); e_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, 3, e_item)
 
     def update_ui(self):
-        with self.server.client_lock: active_data = list(self.server.active_clients_data)
+        with self.server.client_lock:
+            active_data = list(self.server.active_clients_data)
+        
         changed = False
         for d in active_data:
             if not any(h.get('log_path') == d['log'] for h in self.history_data):
-                self.history_data.append({'time': time.strftime("%Y-%m-%d %H:%M:%S"), 'ip': d['ip'], 'log_path': d['log']})
+                self.history_data.append({
+                    'time': time.strftime("%Y-%m-%d %H:%M:%S"),
+                    'ip': d['ip'],
+                    'log_path': d['log']
+                })
                 changed = True
+        
         self.refresh_table_from_data()
         if changed: self.save_history()
 
