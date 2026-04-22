@@ -33,10 +33,19 @@ class ActivityLogs(RemoteBase, QMainWindow):
                 self.logs_area.append(data)
 
     def save_logs(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save Logs", "activity_logs.txt", "*.txt")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Logs", f"activity_logs_{ip_to_filename(self.ip)}.txt", "Text Files (*.txt)")
         if path:
-            with open(path, "w") as f: f.write(self.logs_area.toPlainText())
-            QMessageBox.information(self, "Done", "Logs saved successfully.")
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(self.logs_area.toPlainText())
+                
+                if QMessageBox.question(self, "Success", "Logs saved successfully. Open it now?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+                    from client.core.network import open_file; open_file(path)
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to save logs: {e}")
+
+def ip_to_filename(ip):
+    return ip.replace(".", "_")
 
     def closeEvent(self, ev):
         self.timer.stop(); super().closeEvent(ev)

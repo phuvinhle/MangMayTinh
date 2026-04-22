@@ -9,13 +9,11 @@ from pathlib import Path
 
 from server.core.registry import CommandRegistry, BaseCommand
 
-
 @CommandRegistry.register("STREAM_CTRL")
 class StreamCtrlCommand(BaseCommand):
     def execute(self, server, conn, data):
         server.is_streaming = data['active']
         server.stream_mode = data.get('mode', "SCREEN")
-
 
 @CommandRegistry.register("SCREENSHOT")
 class ScreenshotCommand(BaseCommand):
@@ -23,6 +21,8 @@ class ScreenshotCommand(BaseCommand):
         try:
             if data.get('mode') == "WEBCAM":
                 cap = cv2.VideoCapture(0)
+                # Skip first 10 frames to allow auto-focus/exposure to stabilize
+                for _ in range(10): cap.read()
                 ret, img = cap.read()
                 cap.release()
                 if not ret:
@@ -40,41 +40,33 @@ class ScreenshotCommand(BaseCommand):
             logging.error(f"Screenshot Error: {e}")
             conn.sendall(struct.pack("!I", 0))
 
-
 @CommandRegistry.register("REC_START")
 class RecStartCommand(BaseCommand):
     def execute(self, server, conn, data):
         if not server.is_recording:
             server.is_recording = True
-            threading.Thread(
-                target=server._record_worker, daemon=True
-            ).start()
-
+            threading.Thread(target=server._record_worker, daemon=True).start()
 
 @CommandRegistry.register("REC_STOP")
 class RecStopCommand(BaseCommand):
     def execute(self, server, conn, data):
         server.is_recording = False
-        # Wait for worker to finish and release recorder
-        for _ in range(30):
-            if server.recorder is None:
-                break
+        # Wait for recorder to release file
+        for _ in range(50):
+            if server.recorder is None: break
             time.sleep(0.1)
 
         p = Path("temp_rec.mp4")
-        if p.exists():
+        if p.exists() and p.stat().st_size > 0:
             sz = p.stat().st_size
-            logging.info(f"Sending video file: {sz} bytes")
             conn.sendall(struct.pack("!Q", sz))
-            with open(p, "rb") as f:
-                while chunk := f.read(65536):
-                    try:
-                        conn.sendall(chunk)
-                    except Exception:
-                        break
             try:
-                p.unlink()
-            except Exception:
-                pass
+                with open(p, "rb") as f:
+                    while chunk := f.read(131072):
+                        conn.sendall(chunk)
+            except Exception: pass
+            finally:
+                try: p.unlink()
+                except: pass
         else:
             conn.sendall(struct.pack("!Q", 0))
