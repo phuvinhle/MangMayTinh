@@ -151,6 +151,30 @@ class ControlServer:
         except Exception as e: logging.error(f"Stream Loop Error: {e}")
         finally: raw.close()
 
+    def _record_worker(self):
+        cam = None
+        if self.stream_mode == "WEBCAM":
+            cam = cv2.VideoCapture(0)
+        
+        with mss.mss() as sct:
+            try:
+                while self.running and self.is_recording:
+                    if self.stream_mode == "SCREEN":
+                        img = np.array(sct.grab(sct.monitors[1])); f = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                    else:
+                        if cam is None: cam = cv2.VideoCapture(0)
+                        ret, f = cam.read()
+                        if not ret: f = np.zeros((480, 640, 3), np.uint8)
+                    
+                    if self.recorder is None:
+                        h, w = f.shape[:2]; self.recorder = cv2.VideoWriter("temp_rec.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 10, (w, h))
+                    if self.recorder: self.recorder.write(f)
+                    time.sleep(0.1) # Match 10 FPS exactly
+            except Exception: pass
+            finally:
+                if self.recorder: self.recorder.release(); self.recorder = None
+                if cam: cam.release()
+
     def handle_stream(self, conn):
         cam = None
         with mss.mss() as sct:
@@ -168,7 +192,8 @@ class ControlServer:
                     b = enc.tobytes(); conn.sendall(struct.pack("!I", len(b)) + b)
             except Exception: pass
             finally: 
-                conn.close()
+                try: conn.close()
+                except: pass
                 if cam: cam.release()
 
     def command_loop(self):
@@ -179,21 +204,11 @@ class ControlServer:
             while self.running:
                 try:
                     c, _ = raw.accept()
-                    # Force immediate release when closed
-                    c.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
-                    threading.Thread(target=self._auth_handler, args=(c,), daemon=True).start()
-                except socket.timeout: continue
+                    sc = self.ssl_context.wrap_socket(c, server_side=True)
+                    threading.Thread(target=self.handle_command, args=(sc,), daemon=True).start()
+                except (socket.timeout, ssl.SSLError): continue
         except Exception as e: logging.error(f"Command Loop Error: {e}")
         finally: raw.close()
-
-    def _auth_handler(self, raw_conn):
-        conn = None
-        try:
-            conn = self.ssl_context.wrap_socket(raw_conn, server_side=True)
-            self.handle_command(conn)
-        except Exception:
-            if conn: conn.close()
-            else: raw_conn.close()
 
     def handle_command(self, conn):
         peer = "Unknown"; client_entry = None
@@ -201,20 +216,11 @@ class ControlServer:
         except: pass
 
         try:
-            # Secure password receipt
-            data = conn.recv(1024)
-            if not data: return
-            pwd = data.decode().strip()
-            
-            # CRITICAL DEBUG
-            print(f"DEBUG: Auth attempt from {peer}. Received: [{pwd}], Expected: [{self.password}]")
-            
+            pwd = conn.recv(1024).decode().strip()
             if pwd != self.password:
-                logging.warning(f"Auth FAILED from {peer}")
                 res = json.dumps({"status": "FAIL", "msg": "Invalid Password"}).encode()
                 conn.sendall(struct.pack("!I", len(res)) + res); return
 
-            # Auth success
             log_name = f"log_{peer}_{time.strftime('%Y%m%d_%H%M%S')}.txt"
             log_path = self.log_dir / log_name
             client_entry = {"ip": peer, "log": str(log_path), "conn": conn}
@@ -239,7 +245,7 @@ class ControlServer:
         except Exception: pass
         finally:
             with self.client_lock:
-                if client_entry is not None and client_entry in self.active_clients_data:
+                if client_entry in self.active_clients_data:
                     self.active_clients_data.remove(client_entry)
             self.log_event(f"--- Session Ended for {peer} ---")
             try:

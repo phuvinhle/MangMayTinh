@@ -90,9 +90,7 @@ class FileExplorer(RemoteBase, QMainWindow):
                                 QApplication.processEvents()
                         if not progress.wasCanceled():
                             progress.close()
-                            load = QProgressDialog("Opening file...", None, 0, 0, self)
-                            load.setWindowModality(Qt.WindowModal); load.show(); QApplication.processEvents()
-                            from client.core.network import open_file; open_file(lp)
-                            load.close()
+                            if QMessageBox.question(self, "Success", "Download completed. Open it now?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+                                from client.core.network import open_file; open_file(lp)
                     finally: self.cmd_s.settimeout(old_timeout); progress.close()
             else: QMessageBox.warning(self, "Error", "File not found.")

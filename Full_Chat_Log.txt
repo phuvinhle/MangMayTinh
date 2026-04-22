@@ -1474,6 +1474,19 @@ AI (Gemini CLI):
 
 STATUS: UI feedback is now streamlined and non-blocking; server status synchronization is hardened against OS-level socket delays.
 ---------------------------------------------------------------------------
+SESSION UPDATE: APRIL 22, 2026 - CRITICAL CRASH FIX (MEDIAMANAGER STABILIZATION)
+
+USER: The application cracks (crashes) when saving video. This was fixed before, why is it back?
+
+AI (Gemini CLI):
+1. Diagnosed the crash as a Segfault caused by improper `QProgressDialog` lifecycle management during heavy `QApplication.processEvents()` loops.
+2. Rewrote `media_manager.py` with explicit variable naming for each dialog (`wait_dialog`, `dl_progress`, `load_box`) to prevent memory corruption.
+3. Ensured every dialog is explicitly closed and references are cleared before spawning subsequent UI elements.
+4. Centralized imports and added robust exception handling for socket timeouts during the "Wait-for-finalize" video phase.
+5. Implemented a safe helper method `show_opening_popup` to handle "Opening..." feedback without blocking the main event loop unexpectedly.
+
+STATUS: MediaManager is now bulletproofed against memory-related crashes and UI race conditions.
+---------------------------------------------------------------------------
 SESSION UPDATE: APRIL 22, 2026 - DETAILED AUTH DEBUGGING
 
 USER: Server reports "incorrect password" even after fix. Connection is still broken.

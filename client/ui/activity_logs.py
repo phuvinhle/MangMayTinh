@@ -39,15 +39,8 @@ class ActivityLogs(RemoteBase, QMainWindow):
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(self.logs_area.toPlainText())
                 
-                # Auto-closing loading indicator for consistency
-                from PyQt5.QtWidgets import QProgressDialog
-                load = QProgressDialog("Opening logs...", None, 0, 0, self)
-                load.setWindowTitle("Please Wait")
-                load.setWindowModality(Qt.WindowModal)
-                load.show(); QApplication.processEvents()
-                
-                from client.core.network import open_file; open_file(path)
-                load.close()
+                if QMessageBox.question(self, "Success", "Logs saved successfully. Open it now?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+                    from client.core.network import open_file; open_file(path)
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to save logs: {e}")
 
