@@ -46,6 +46,3 @@ class ActivityLogs(RemoteBase, QMainWindow):
 
 def ip_to_filename(ip):
     return ip.replace(".", "_")
-
-    def closeEvent(self, ev):
-        self.timer.stop(); super().closeEvent(ev)
