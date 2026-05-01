@@ -97,4 +97,4 @@ Update full features
 
 - Technical -> Update soon  
 
-- AI: Gemini CLI  
+- AI: Gemini and Chat-GPT
